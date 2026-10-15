@@ -17,7 +17,8 @@ import {
   PieChart,
   ArrowRight,
   BedDouble,
-  CheckCircle2
+  CheckCircle2,
+  AlertTriangle
 } from 'lucide-react';
 import { NC_COUNTIES, SC_COUNTIES, CountyClimate, getCountyClimate } from './data/climateData';
 import { 
@@ -567,9 +568,12 @@ export default function App() {
                     {floorResult && (
                       <div className="flex items-center space-x-3 bg-slate-800/90 border border-slate-700/80 px-4 py-1.5 rounded-xl">
                         <div>
-                          <div className="text-[10px] uppercase font-bold text-slate-400">Selected Equipment</div>
-                          <div className="text-xl font-black text-emerald-400 leading-tight">
-                            {floorResult.recommendedTonnage.toFixed(1)} TONS
+                          <div className="text-[10px] uppercase font-bold text-slate-400">Actual Tonnage Needed</div>
+                          <div className="text-xl font-black text-white leading-tight">
+                            {floorResult.calculatedCoolingTons.toFixed(2)} TONS
+                          </div>
+                          <div className="text-[11px] font-bold text-emerald-400">
+                            (Recommended: {floorResult.recommendedTonnage.toFixed(1)} T)
                           </div>
                         </div>
 
@@ -595,6 +599,15 @@ export default function App() {
                             </div>
                           </div>
                         )}
+
+                        {floorResult.recommendedFurnaceBtu && (
+                          <div className="border-l border-slate-700 pl-3 hidden sm:block">
+                            <div className="text-[10px] text-slate-400">Gas Furnace</div>
+                            <div className="text-xs font-bold text-amber-400">
+                              {floorResult.recommendedFurnaceBtu / 1000}k BTU
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -610,6 +623,14 @@ export default function App() {
                     )}
                   </div>
                 </div>
+
+                {/* Furnace Capacity Warning Banner if heating load exceeds 140k furnace output */}
+                {floorResult?.furnaceWarning && (
+                  <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 text-xs text-amber-900 flex items-center space-x-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span className="font-medium">{floorResult.furnaceWarning}</span>
+                  </div>
+                )}
 
                 {/* Floor Sizer Controls */}
                 <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-white">
@@ -883,7 +904,7 @@ export default function App() {
                 >
                   <span>{f.name}</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isSelected ? 'bg-blue-700 text-blue-100' : 'bg-slate-100 text-slate-600'}`}>
-                    {fResult?.recommendedTonnage.toFixed(1)}T • {fResult?.totalCfm} CFM
+                    {fResult?.calculatedCoolingTons.toFixed(2)}T ({fResult?.recommendedTonnage.toFixed(1)}T Rec) • {fResult?.totalCfm} CFM
                   </span>
                 </button>
               );
@@ -902,6 +923,12 @@ export default function App() {
 
             <div className="flex items-center space-x-4 bg-slate-800/90 border border-slate-700 px-4 py-1.5 rounded-xl">
               <div>
+                <div className="text-[10px] text-slate-400 font-bold uppercase">Actual Load / Rec</div>
+                <div className="text-sm font-black text-white">
+                  {currentDuctResult?.calculatedCoolingTons.toFixed(2)} T <span className="text-emerald-400 text-xs font-bold">({currentDuctResult?.recommendedTonnage.toFixed(1)} T)</span>
+                </div>
+              </div>
+              <div className="border-l border-slate-700 pl-3">
                 <div className="text-[10px] text-slate-400 font-bold uppercase">System Airflow</div>
                 <div className="text-lg font-black text-sky-400">{currentDuctResult?.totalCfm || 0} CFM</div>
               </div>
@@ -1109,9 +1136,12 @@ export default function App() {
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total House Required Sizing</div>
               <div className="flex items-baseline space-x-2">
                 <span className="text-2xl font-black text-slate-900">
-                  {calculationResult.totalTonnage.toFixed(1)} TONS
+                  {calculationResult.totalCalculatedTons.toFixed(2)} TONS
                 </span>
-                <span className="text-xs font-semibold text-slate-500">
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                  (Recommended: {calculationResult.totalTonnage.toFixed(1)} T)
+                </span>
+                <span className="text-xs font-semibold text-slate-500 hidden sm:inline">
                   across {calculationResult.floors.length} {calculationResult.floors.length === 1 ? 'level' : 'levels'}
                 </span>
               </div>

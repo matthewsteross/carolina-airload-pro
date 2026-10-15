@@ -2,6 +2,7 @@ import { CountyClimate, SourceRecord } from '../data/climateData';
 
 export type FoundationType = 
   | 'slab' 
+  | 'slab_insulated'
   | 'crawlspace_vented' 
   | 'crawlspace_sealed' 
   | 'basement_unconditioned' 
@@ -67,6 +68,13 @@ export interface RoomData {
   suggestedVentSize?: string;
 }
 
+export interface WindowOrientations {
+  northPct: number;
+  eastPct: number;
+  southPct: number;
+  westPct: number;
+}
+
 export interface FloorInput {
   id: string;
   name: string;
@@ -78,6 +86,7 @@ export interface FloorInput {
   windowType: WindowType;
   windowCoveragePct: number;
   primaryExposure: 'balanced' | 'south' | 'west' | 'east' | 'north';
+  windowOrientations?: WindowOrientations;
   infiltration: InfiltrationLevel;
   ductLocation: DuctLocation;
   systemType: SystemType;
@@ -119,9 +128,9 @@ export interface FloorResult {
     ductLossBtu: number;
   };
 
-  // Sizing recommendations
+  // Sizing recommendations: actual calculated load and closest nominal equipment
   calculatedCoolingTons: number;
-  recommendedTonnage: number; // Sized to standard split increments (e.g. 2.5)
+  recommendedTonnage: number; // Sized to closest standard split increment (e.g. 2.0, 2.5)
   oversizingPercent: number;
   
   // Airflow
@@ -130,6 +139,7 @@ export interface FloorResult {
   // Heating equipment
   auxHeatStripKw?: number;
   recommendedFurnaceBtu?: number;
+  furnaceWarning?: string;
   
   // Room breakdown
   rooms: RoomData[];
@@ -140,7 +150,8 @@ export interface HouseCalculationResult {
   totalSqFt: number;
   totalCoolingBtu: number;
   totalHeatingBtu: number;
-  totalTonnage: number;
+  totalCalculatedTons: number; // Exact sum of calculated tons needed (e.g. 4.28)
+  totalTonnage: number; // Recommended nominal equipment total (e.g. 4.5)
   totalCfm: number;
   climate: CountyClimate;
   methodologySource: SourceRecord;
@@ -260,8 +271,14 @@ export const CEILING_SPECS: Record<CeilingType, AssemblySpec<CeilingType>> = {
 export const FLOOR_SPECS: Record<FoundationType, AssemblySpec<FoundationType>> = {
   'slab': {
     value: 'slab',
-    fFactor: 0.73, // ASHRAE / IECC uninsulated slab edge perimeter F-factor (BTU/hr·ft·°F)
-    description: "Slab-on-Grade Concrete Floor (Perimeter F-Factor: 0.73 BTU/hr·ft·°F)",
+    fFactor: 0.73, // ASHRAE Ch. 26 Table 7 uninsulated slab edge perimeter F-factor (BTU/hr·ft·°F)
+    description: "Slab-on-Grade Concrete Floor - Uninsulated Edge (F-0.73)",
+    source: ASHRAE_FUNDAMENTALS_CH26_SOURCE
+  },
+  'slab_insulated': {
+    value: 'slab_insulated',
+    fFactor: 0.44, // ASHRAE Ch. 26 Table 7 / NCECC R402 R-10 perimeter edge insulation F-factor (BTU/hr·ft·°F)
+    description: "Slab-on-Grade with R-10 Edge Insulation (Code Compliant, F-0.44)",
     source: NCECC_TABLE_R402_SOURCE
   },
   'crawlspace_vented': {
@@ -391,28 +408,40 @@ export function calculateVentSize(cfm: number): string {
   return 'Dual 4" x 12" or 8" x 14" Register';
 }
 
-// Equipment Sizing increments (including standard 4.5 ton residential tier)
+// Equipment Sizing increments: selects the CLOSEST standard size (1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0)
+// Does NOT just round up or always round down - selects nearest standard nominal equipment capacity.
 export function selectEquipmentTonnage(rawTons: number): { tonnage: number; oversizingPct: number } {
   const standardSizes = [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0];
   
+  // Find the standard size with minimal absolute difference from raw calculated tons
+  let closestSize = standardSizes[0];
+  let minDiff = Math.abs(rawTons - standardSizes[0]);
+  
   for (const size of standardSizes) {
-    if (size >= rawTons) {
-      const oversizingPct = Math.round(((size - rawTons) / rawTons) * 100);
-      return { tonnage: size, oversizingPct };
+    const diff = Math.abs(rawTons - size);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closestSize = size;
     }
   }
   
-  const customSize = Math.ceil(rawTons * 2) / 2;
-  return { 
-    tonnage: customSize, 
-    oversizingPct: Math.round(((customSize - rawTons) / rawTons) * 100) 
-  };
+  if (rawTons > 5.0) {
+    closestSize = Math.round(rawTons * 2) / 2;
+  }
+  
+  const oversizingPct = Math.round(((closestSize - rawTons) / rawTons) * 100);
+  return { tonnage: closestSize, oversizingPct };
 }
 
 /**
  * Calculates heating and cooling loads per floor based on published ASHRAE heat balance equations
  */
-export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate, isSingleFloor = false): FloorResult {
+export function calculateFloorLoad(
+  floor: FloorInput, 
+  climate: CountyClimate, 
+  isSingleFloor = false,
+  isFloorDefaultMain = true
+): FloorResult {
   const indoorHeatTemp = 70; // Standard code winter indoor setpoint (IECC / NCRC)
   const indoorCoolTemp = 75; // Standard code summer indoor setpoint (IECC / NCRC)
   
@@ -455,9 +484,9 @@ export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate, is
   let floorHeatLoss = 0;
   let floorCoolGain = 0;
   
-  if (floor.foundation === 'slab') {
+  if (floor.foundation === 'slab' || floor.foundation === 'slab_insulated') {
     // Correct Perimeter F-Factor Method: Q_slab = F_p * Perimeter * deltaT
-    const fFactor = floorSpec.fFactor || 0.73;
+    const fFactor = floorSpec.fFactor ?? (floor.foundation === 'slab_insulated' ? 0.44 : 0.73);
     floorHeatLoss = fFactor * perimeter * deltaTHeat;
     floorCoolGain = 0; // Slabs have negligible cooling gain
   } else if (floor.foundation === 'crawlspace_vented') {
@@ -485,7 +514,11 @@ export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate, is
   // Low-angle direct West sun in late afternoon and East in morning deliver the highest peak heat gain.
   // High midday sun angle makes South vertical glass gain lower than East/West.
   let solarFactor = 1.0;
-  if (floor.primaryExposure === 'west') solarFactor = 1.40;
+  if (floor.windowOrientations) {
+    const { northPct, eastPct, southPct, westPct } = floor.windowOrientations;
+    const totalPct = (northPct + eastPct + southPct + westPct) || 100;
+    solarFactor = (northPct * 0.45 + eastPct * 1.25 + southPct * 0.85 + westPct * 1.40) / totalPct;
+  } else if (floor.primaryExposure === 'west') solarFactor = 1.40;
   else if (floor.primaryExposure === 'east') solarFactor = 1.25;
   else if (floor.primaryExposure === 'south') solarFactor = 0.85;
   else if (floor.primaryExposure === 'north') solarFactor = 0.45;
@@ -508,7 +541,7 @@ export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate, is
   // 6. Internal Heat Gains (Sensible & Latent)
   // Occupants (ASHRAE Ch. 18): 230 BTU/h sensible, 200 BTU/h latent per person.
   // In single-story homes: 3 occupants + 1,200 BTU kitchen/appliances.
-  // In multi-story homes: 2 occupants on main + 1,200 BTU appliances; 2 occupants upstairs + 300 BTU electronics.
+  // In multi-story homes: 2 occupants on main level + 1,200 BTU appliances; 2 occupants upstairs + 300 BTU electronics.
   let occupantSensible = 0;
   let occupantLatent = 0;
   let appliancesSensible = 0;
@@ -517,7 +550,7 @@ export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate, is
     occupantSensible = 3 * 230;
     occupantLatent = 3 * 200;
     appliancesSensible = 1200;
-  } else if (floor.isMainLevel ?? (floor.ceiling === 'conditioned_space_above' || floor.name.toLowerCase().includes('main') || floor.name.toLowerCase().includes('1'))) {
+  } else if (floor.isMainLevel ?? isFloorDefaultMain) {
     // Main level with kitchen/living
     occupantSensible = 2 * 230;
     occupantLatent = 2 * 200;
@@ -548,7 +581,7 @@ export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate, is
   const latentCoolingBtu = Math.round(rawLatentCool + ductCoolLatent);
   const totalCoolingBtu = sensibleCoolingBtu + latentCoolingBtu;
   
-  // Equipment Sizing
+  // Equipment Sizing: raw tons needed and closest recommended unit size
   const rawTons = totalCoolingBtu / 12000;
   const { tonnage: recommendedTonnage, oversizingPct } = selectEquipmentTonnage(rawTons);
   
@@ -569,9 +602,16 @@ export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate, is
     else auxHeatStripKw = 20;
   }
   
+  let furnaceWarning: string | undefined;
   if (floor.systemType === 'gas_furnace_ac' || floor.systemType === 'dual_fuel') {
     const furnaceSizes = [40000, 60000, 80000, 100000, 120000, 140000];
-    recommendedFurnaceBtu = furnaceSizes.find(size => size * 0.8 >= totalHeatingBtu) || 140000;
+    const match = furnaceSizes.find(size => size * 0.8 >= totalHeatingBtu);
+    if (match) {
+      recommendedFurnaceBtu = match;
+    } else {
+      recommendedFurnaceBtu = 140000;
+      furnaceWarning = `Heating load (${totalHeatingBtu.toLocaleString()} BTU/h) exceeds standard 140k residential furnace output (112,000 BTU/h output at 80% AFUE). Multiple units or commercial equipment required.`;
+    }
   }
   
   // Component Breakdown for Validation Audits
@@ -595,7 +635,7 @@ export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate, is
     ductLossBtu: Math.round(ductHeatLoss)
   };
 
-  // 8. Room by room distribution with exact CFM normalization
+  // 8. Room by room distribution with exact integer CFM allocation (Largest Remainder Method)
   let rooms: RoomData[] = [];
   if (floor.rooms && floor.rooms.length > 0) {
     const rawWeights = floor.rooms.map(room => {
@@ -605,27 +645,37 @@ export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate, is
     });
 
     const sumWeights = rawWeights.reduce((a, b) => a + b, 0) || 1;
-    const totalRoomSqFt = floor.rooms.reduce((acc, r) => acc + r.sqFt, 0) || floor.sqFt;
 
-    let accumulatedCfm = 0;
-    rooms = floor.rooms.map((room, idx) => {
+    // Largest remainder method ensures room CFMs strictly sum to totalCfm
+    const floatCfms = floor.rooms.map((_, idx) => {
       const roomWeight = rawWeights[idx] / sumWeights;
-      const roomBtu = Math.round(totalCoolingBtu * (room.sqFt / totalRoomSqFt));
-      
-      // Exact CFM normalization ensuring sum equals totalCfm
-      let roomCfm = Math.round(totalCfm * roomWeight);
-      if (idx === floor.rooms!.length - 1) {
-        roomCfm = Math.max(20, totalCfm - accumulatedCfm);
-      } else {
-        accumulatedCfm += roomCfm;
-      }
+      const target = totalCfm * roomWeight;
+      return {
+        idx,
+        floor: Math.floor(target),
+        fraction: target - Math.floor(target),
+        weight: roomWeight
+      };
+    });
 
+    const sumFloored = floatCfms.reduce((acc, item) => acc + item.floor, 0);
+    const diff = totalCfm - sumFloored;
+    
+    // Sort by largest fractional remainder descending
+    const sorted = [...floatCfms].sort((a, b) => b.fraction - a.fraction);
+    for (let i = 0; i < diff; i++) {
+      floatCfms[sorted[i % sorted.length].idx].floor += 1;
+    }
+
+    rooms = floor.rooms.map((room, idx) => {
+      const finalCfm = floatCfms[idx].floor;
+      const roomBtu = Math.round(totalCoolingBtu * floatCfms[idx].weight);
       return {
         ...room,
         calculatedBtu: roomBtu,
-        calculatedCfm: roomCfm,
-        suggestedDuctSize: calculateDuctSize(roomCfm),
-        suggestedVentSize: calculateVentSize(roomCfm)
+        calculatedCfm: finalCfm,
+        suggestedDuctSize: calculateDuctSize(finalCfm),
+        suggestedVentSize: calculateVentSize(finalCfm)
       };
     });
   }
@@ -647,6 +697,7 @@ export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate, is
     totalCfm,
     auxHeatStripKw,
     recommendedFurnaceBtu,
+    furnaceWarning,
     rooms
   };
 }
@@ -656,12 +707,13 @@ export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate, is
  */
 export function calculateHouseLoad(floors: FloorInput[], climate: CountyClimate): HouseCalculationResult {
   const isSingleFloor = floors.length === 1;
-  const floorResults = floors.map(floor => calculateFloorLoad(floor, climate, isSingleFloor));
+  const floorResults = floors.map((floor, idx) => calculateFloorLoad(floor, climate, isSingleFloor, idx === 0));
   
   const totalSqFt = floorResults.reduce((acc, f) => acc + f.sqFt, 0);
   const totalCoolingBtu = floorResults.reduce((acc, f) => acc + f.totalCoolingBtu, 0);
   const totalHeatingBtu = floorResults.reduce((acc, f) => acc + f.totalHeatingBtu, 0);
-  const totalTonnage = floorResults.reduce((acc, f) => acc + f.recommendedTonnage, 0);
+  const totalCalculatedTons = parseFloat(floorResults.reduce((acc, f) => acc + f.calculatedCoolingTons, 0).toFixed(2));
+  const totalTonnage = parseFloat(floorResults.reduce((acc, f) => acc + f.recommendedTonnage, 0).toFixed(1));
   const totalCfm = floorResults.reduce((acc, f) => acc + f.totalCfm, 0);
   
   return {
@@ -669,7 +721,8 @@ export function calculateHouseLoad(floors: FloorInput[], climate: CountyClimate)
     totalSqFt,
     totalCoolingBtu,
     totalHeatingBtu,
-    totalTonnage: parseFloat(totalTonnage.toFixed(1)),
+    totalCalculatedTons,
+    totalTonnage,
     totalCfm,
     climate,
     methodologySource: climate.source

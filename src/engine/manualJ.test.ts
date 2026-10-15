@@ -30,15 +30,21 @@ assert(chas.summerDb === 91 && chas.designGrains === 52, `Charleston SC has 91°
 const boone = getCountyClimate('NC', 'Watauga');
 assert(boone.summerDb === 82 && boone.winterDb === 9, `Watauga (Boone NC) has 82°F summer and 9°F winter`);
 
-console.log('\n--- Testing Manual S Equipment Selection ---');
+console.log('\n--- Testing Manual S Equipment Selection (Closest Standard Size) ---');
 const size1 = selectManualSTonnage(2.1);
-assert(size1.tonnage === 2.5, `Raw 2.1 Tons selects 2.5 Ton unit (got ${size1.tonnage})`);
+assert(size1.tonnage === 2.0, `Raw 2.1 Tons selects closest 2.0 Ton unit (got ${size1.tonnage})`);
+
+const size1b = selectManualSTonnage(2.35);
+assert(size1b.tonnage === 2.5, `Raw 2.35 Tons selects closest 2.5 Ton unit (got ${size1b.tonnage})`);
 
 const size2 = selectManualSTonnage(3.0);
 assert(size2.tonnage === 3.0, `Raw 3.0 Tons selects 3.0 Ton unit`);
 
 const size3 = selectManualSTonnage(3.45);
-assert(size3.tonnage === 3.5, `Raw 3.45 Tons selects 3.5 Ton unit`);
+assert(size3.tonnage === 3.5, `Raw 3.45 Tons selects closest 3.5 Ton unit`);
+
+const size4 = selectManualSTonnage(4.06);
+assert(size4.tonnage === 4.0, `Raw 4.06 Tons selects closest 4.0 Ton unit without unnecessary oversizing (got ${size4.tonnage})`);
 
 console.log('\n--- Testing Manual D Airflow & Duct Sizing ---');
 assert(calculateDuctSize(75) === '6" Round Flex', `75 CFM sizes to 6" Round Flex`);
