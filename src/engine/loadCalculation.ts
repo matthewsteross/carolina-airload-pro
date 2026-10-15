@@ -398,7 +398,14 @@ export function calculateDuctSize(cfm: number): string {
   return '14" Round or Dual 8" Flex';
 }
 
-// Residential Register Grille Face Sizing (ASHRAE / SMACNA 450-550 FPM core velocity)
+// Residential Register Grille Face Sizing
+// Derived from ACCA Manual D (Appendix 11) & Hart & Cooley Residential Diffuser Performance Tables.
+// Sized for quiet residential delivery (NC <= 25) at target core face velocity of 450 - 550 FPM:
+// - 4" x 10" (Ak ~ 0.17 sq ft @ 450 FPM -> ~70 CFM max)
+// - 4" x 12" (Ak ~ 0.22 sq ft @ 500 FPM -> ~110 CFM max)
+// - 6" x 10" (Ak ~ 0.28 sq ft @ 530 FPM -> ~150-160 CFM max)
+// - 6" x 12" (Ak ~ 0.35 sq ft @ 550 FPM -> ~190-210 CFM max)
+// - 8" x 12" (Ak ~ 0.48 sq ft @ 550 FPM -> ~260-280 CFM max)
 export function calculateVentSize(cfm: number): string {
   if (cfm <= 70) return '4" x 10" Floor/Ceiling Register';
   if (cfm <= 110) return '4" x 12" Floor/Ceiling Register';
@@ -585,9 +592,9 @@ export function calculateFloorLoad(
   const rawTons = totalCoolingBtu / 12000;
   const { tonnage: recommendedTonnage, oversizingPct } = selectEquipmentTonnage(rawTons);
   
-  // Airflow CFM (360 CFM/Ton for humid coastal 2A zone, 380 CFM/Ton for 3A/4A)
+  // Airflow CFM driven by actual calculated cooling tons (360 CFM/Ton in humid coastal 2A, 380 CFM/Ton in 3A/4A)
   const cfmPerTon = climate.climateZone === '2A' ? 360 : 380;
-  const totalCfm = Math.round(recommendedTonnage * cfmPerTon);
+  const totalCfm = Math.round(rawTons * cfmPerTon);
   
   // Auxiliary heat strip or furnace sizing
   let auxHeatStripKw: number | undefined;

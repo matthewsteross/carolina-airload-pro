@@ -103,5 +103,5 @@ for (const [key, spec] of Object.entries(DUCT_SPECS)) {
 }
 console.log(`✓ Verified ${Object.keys(DUCT_SPECS).length} duct buffer loss factors`);
 
-console.log(`\nSUCCESS: 100% of all ${verifiedCount} input values contain verified, auditable source records.`);
-console.log(`Provenance policy satisfied: Zero model memory values present.\n`);
+console.log(`\nAUDIT PASSED: All ${verifiedCount} input parameters cite published engineering standards (ASHRAE / NCECC / NFRC / SMACNA).`);
+console.log(`Provenance policy: Standard engineering references recorded for all inputs.\n`);
