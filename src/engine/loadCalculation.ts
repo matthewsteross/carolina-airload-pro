@@ -91,6 +91,7 @@ export interface FloorInput {
   ductLocation: DuctLocation;
   systemType: SystemType;
   isMainLevel?: boolean; // Determines internal appliance distribution
+  installedTons?: number; // Unit size chosen in the field; defaults to the nearest standard size
   rooms?: RoomData[];
 }
 
@@ -128,13 +129,15 @@ export interface FloorResult {
     ductLossBtu: number;
   };
 
-  // Sizing recommendations: actual calculated load and closest nominal equipment
+  // Sizing: actual calculated load, closest nominal size, and the unit being installed
   calculatedCoolingTons: number;
-  recommendedTonnage: number; // Sized to closest standard split increment (e.g. 2.0, 2.5)
-  oversizingPercent: number;
+  recommendedTonnage: number; // Closest standard split size to the calculated load (label only)
+  equipmentTons: number;      // installedTons if entered, otherwise recommendedTonnage
+  oversizingPercent: number;  // equipmentTons vs calculated load
   
   // Airflow
-  totalCfm: number;
+  loadCfm: number;  // Airflow the calculated load alone would need
+  totalCfm: number; // Blower airflow of the unit being installed; ducts and registers are sized to this
   
   // Heating equipment
   auxHeatStripKw?: number;
@@ -151,49 +154,51 @@ export interface HouseCalculationResult {
   totalCoolingBtu: number;
   totalHeatingBtu: number;
   totalCalculatedTons: number; // Exact sum of calculated tons needed (e.g. 4.28)
-  totalTonnage: number; // Recommended nominal equipment total (e.g. 4.5)
+  totalTonnage: number; // Sum of the units being installed (e.g. 4.5)
   totalCfm: number;
   climate: CountyClimate;
   methodologySource: SourceRecord;
 }
 
 // -------------------------------------------------------------
-// VERIFIED PUBLISHED SOURCES FOR ENVELOPE & HEAT TRANSFER VALUES
+// REFERENCES FOR ENVELOPE & HEAT TRANSFER VALUES
+// These are representative values consistent with the cited references
+// (basis: 'typical'), not numbers looked up row-by-row from those tables.
 // -------------------------------------------------------------
 
 const NCECC_TABLE_R402_SOURCE: SourceRecord = {
   document: "North Carolina Energy Conservation Code (NCECC) / IECC Section R402",
-  tableOrPage: "Table R402.1.2: Insulation and Fenestration Requirements by Component",
+  tableOrPage: "Table R402.1.2: Insulation and Fenestration Requirements by Component (code minimum R-values; U-values are typical assembly values)",
   url: "https://codes.iccsafe.org/content/NCECC2018/chapter-4-re-residential-energy-efficiency",
-  dateRetrieved: "2026-10-15"
+  basis: 'typical'
 };
 
 const ASHRAE_FUNDAMENTALS_CH26_SOURCE: SourceRecord = {
-  document: "ASHRAE Handbook of Fundamentals (2021)",
+  document: "ASHRAE Handbook - Fundamentals (2021)",
   tableOrPage: "Chapter 26: Heat, Air, and Moisture Transfer in Building Assemblies",
-  url: "https://www.ashrae.org/technical-resources/bookstore/handbook",
-  dateRetrieved: "2026-10-15"
+  url: "https://www.ashrae.org/technical-resources/ashrae-handbook",
+  basis: 'typical'
 };
 
-const ASHRAE_FUNDAMENTALS_CH18_SOURCE: SourceRecord = {
-  document: "ASHRAE Handbook of Fundamentals (2021)",
-  tableOrPage: "Chapter 18: Nonresidential and Residential Cooling and Heating Load Calculations",
-  url: "https://www.ashrae.org/technical-resources/bookstore/handbook",
-  dateRetrieved: "2026-10-15"
+const ASHRAE_FUNDAMENTALS_CH17_SOURCE: SourceRecord = {
+  document: "ASHRAE Handbook - Fundamentals (2021)",
+  tableOrPage: "Chapter 17: Residential Cooling and Heating Load Calculations",
+  url: "https://www.ashrae.org/technical-resources/ashrae-handbook",
+  basis: 'typical'
 };
 
 const ASHRAE_FUNDAMENTALS_CH21_SOURCE: SourceRecord = {
-  document: "ASHRAE Handbook of Fundamentals (2021) / SMACNA Residential Comfort System Installation",
-  tableOrPage: "Chapter 21: Duct Design - Conduction Heat Transfer in Buffer Spaces",
-  url: "https://www.ashrae.org/technical-resources/bookstore/handbook",
-  dateRetrieved: "2026-10-15"
+  document: "ASHRAE Handbook - Fundamentals (2021)",
+  tableOrPage: "Chapter 21: Duct Design (duct gain/loss percentages are typical allowances)",
+  url: "https://www.ashrae.org/technical-resources/ashrae-handbook",
+  basis: 'typical'
 };
 
 const NFRC_WINDOW_SOURCE: SourceRecord = {
   document: "National Fenestration Rating Council (NFRC) / NCECC Table R402.1.2",
-  tableOrPage: "NFRC 100/200 Certified Rating Tables for Residential Windows",
+  tableOrPage: "NFRC 100/200 ratings (typical whole-window values by glazing type)",
   url: "https://www.nfrc.org/residential-fenestration-ratings/",
-  dateRetrieved: "2026-10-15"
+  basis: 'typical'
 };
 
 export const WALL_SPECS: Record<WallVintage, AssemblySpec<WallVintage>> = {
@@ -205,26 +210,26 @@ export const WALL_SPECS: Record<WallVintage, AssemblySpec<WallVintage>> = {
   },
   '1980_2000_r11': {
     value: '1980_2000_r11',
-    uValue: 0.088, // R-11 fiberglass batt with framing factors (U-0.088)
-    description: "1980-2000 2x4 Wood Stud with R-11 cavity batt (U-0.088)",
+    uValue: 0.090, // R-11 batt, scaled from the R-13 assembly value below (framing dominates)
+    description: "1980-2000 2x4 Wood Stud with R-11 cavity batt (U-0.090)",
     source: ASHRAE_FUNDAMENTALS_CH26_SOURCE
   },
   '2000_2015_r13': {
     value: '2000_2015_r13',
-    uValue: 0.075, // R-13 cavity batt (U-0.075)
-    description: "2000-2015 2x4 Wood Stud with R-13 cavity batt (U-0.075)",
+    uValue: 0.084, // IECC equivalent U-factor for an R-13 frame wall (zones 0-2)
+    description: "2000-2015 2x4 Wood Stud with R-13 cavity batt (U-0.084)",
     source: NCECC_TABLE_R402_SOURCE
   },
   'modern_code_r15_r20': {
     value: 'modern_code_r15_r20',
-    uValue: 0.057, // R-15 continuous or R-20 code compliant assembly (U-0.057)
-    description: "Modern NC/SC Code 2x4 R-15 or 2x6 R-20 Wood Frame (U-0.057)",
+    uValue: 0.060, // IECC equivalent U-factor for an R-20 / R-13+5 frame wall (zone 3)
+    description: "Modern NC/SC Code 2x4 R-15 or 2x6 R-20 Wood Frame (U-0.060)",
     source: NCECC_TABLE_R402_SOURCE
   },
   'sprayfoam_r21': {
     value: 'sprayfoam_r21',
-    uValue: 0.045, // R-21 closed-cell/open-cell spray foam envelope (U-0.045)
-    description: "High Performance Spray Foam 2x6 Cavity Fill (U-0.045)",
+    uValue: 0.055, // R-21 spray foam 2x6, parallel-path with framing (no continuous insulation)
+    description: "High Performance Spray Foam 2x6 Cavity Fill (U-0.055)",
     source: ASHRAE_FUNDAMENTALS_CH26_SOURCE
   }
 };
@@ -238,14 +243,14 @@ export const CEILING_SPECS: Record<CeilingType, AssemblySpec<CeilingType>> = {
   },
   'attic_vented_r30': {
     value: 'attic_vented_r30',
-    uValue: 0.033,
-    description: "Vented Attic with R-30 Blown Insulation (U-0.033)",
+    uValue: 0.035, // IECC equivalent U-factor for an R-30 ceiling
+    description: "Vented Attic with R-30 Blown Insulation (U-0.035)",
     source: NCECC_TABLE_R402_SOURCE
   },
   'attic_vented_r38': {
     value: 'attic_vented_r38',
-    uValue: 0.026,
-    description: "Vented Attic with R-38 Blown Insulation (NC/SC Code Minimum, U-0.026)",
+    uValue: 0.030, // IECC equivalent U-factor for an R-38 ceiling (0.026 is the R-49 value)
+    description: "Vented Attic with R-38 Blown Insulation (NC/SC Code Minimum, U-0.030)",
     source: NCECC_TABLE_R402_SOURCE
   },
   'attic_sprayfoam_r20': {
@@ -256,15 +261,15 @@ export const CEILING_SPECS: Record<CeilingType, AssemblySpec<CeilingType>> = {
   },
   'vaulted_r30': {
     value: 'vaulted_r30',
-    uValue: 0.034,
-    description: "Vaulted / Cathedral Ceiling with R-30 Cavity Insulation (U-0.034)",
+    uValue: 0.035,
+    description: "Vaulted / Cathedral Ceiling with R-30 Cavity Insulation (U-0.035)",
     source: NCECC_TABLE_R402_SOURCE
   },
   'conditioned_space_above': {
     value: 'conditioned_space_above',
     uValue: 0.0,
     description: "Conditioned Living Space Directly Above (No Attic Heat Loss/Gain)",
-    source: ASHRAE_FUNDAMENTALS_CH18_SOURCE
+    source: ASHRAE_FUNDAMENTALS_CH17_SOURCE
   }
 };
 
@@ -283,8 +288,8 @@ export const FLOOR_SPECS: Record<FoundationType, AssemblySpec<FoundationType>> =
   },
   'crawlspace_vented': {
     value: 'crawlspace_vented',
-    uValue: 0.070, // R-13 floor insulation over vented crawlspace
-    description: "Vented Crawlspace with R-13 Floor Batt Insulation (U-0.070)",
+    uValue: 0.064, // IECC equivalent U-factor for an R-13 floor
+    description: "Vented Crawlspace with R-13 Floor Batt Insulation (U-0.064)",
     source: NCECC_TABLE_R402_SOURCE
   },
   'crawlspace_sealed': {
@@ -303,7 +308,7 @@ export const FLOOR_SPECS: Record<FoundationType, AssemblySpec<FoundationType>> =
     value: 'conditioned_space_below',
     uValue: 0.0,
     description: "Conditioned Living Space Directly Below (Intermediate Floor)",
-    source: ASHRAE_FUNDAMENTALS_CH18_SOURCE
+    source: ASHRAE_FUNDAMENTALS_CH17_SOURCE
   }
 };
 
@@ -342,26 +347,26 @@ export const INFILTRATION_SPECS: Record<InfiltrationLevel, AssemblySpec<Infiltra
   'tight': {
     value: 'tight',
     ach: 0.30, // 5.0 ACH50 / N(17) ≈ 0.29 - 0.30 natural ACH per LBL infiltration model
-    description: "Tight Envelope (<= 5.0 ACH50, NC/SC Code Verified, ~0.30 natural ACH)",
+    description: "Tight Envelope (~5.0 ACH50 blower-door result, ~0.30 natural ACH)",
     source: NCECC_TABLE_R402_SOURCE
   },
   'semi_tight': {
     value: 'semi_tight',
     ach: 0.45, // ~7.5 ACH50
     description: "Semi-Tight Envelope (~7.0 - 8.0 ACH50, ~0.45 natural ACH)",
-    source: ASHRAE_FUNDAMENTALS_CH18_SOURCE
+    source: ASHRAE_FUNDAMENTALS_CH17_SOURCE
   },
   'average': {
     value: 'average',
     ach: 0.60, // ~10 ACH50
     description: "Average Infiltration (~10.0 ACH50, 1990-2010 construction, ~0.60 natural ACH)",
-    source: ASHRAE_FUNDAMENTALS_CH18_SOURCE
+    source: ASHRAE_FUNDAMENTALS_CH17_SOURCE
   },
   'loose': {
     value: 'loose',
     ach: 0.85, // >14 ACH50
     description: "Loose Infiltration (> 14.0 ACH50, older or unweatherized home, ~0.85 natural ACH)",
-    source: ASHRAE_FUNDAMENTALS_CH18_SOURCE
+    source: ASHRAE_FUNDAMENTALS_CH17_SOURCE
   }
 };
 
@@ -414,6 +419,9 @@ export function calculateVentSize(cfm: number): string {
   if (cfm <= 280) return '8" x 12" Floor/Ceiling Register';
   return 'Dual 4" x 12" or 8" x 14" Register';
 }
+
+// Design humidity difference at or above which the airflow default drops to 360 CFM/ton
+export const HUMID_DESIGN_GRAINS = 50;
 
 // Equipment Sizing increments: selects the CLOSEST standard size (1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0)
 // Does NOT just round up or always round down - selects nearest standard nominal equipment capacity.
@@ -538,15 +546,21 @@ export function calculateFloorLoad(
   const ach = INFILTRATION_SPECS[floor.infiltration].ach!;
   const cfmInfiltration = (volume * ach) / 60;
   
+  // 1.08 and 0.68 assume sea-level air density. Scale by station pressure
+  // (altitude correction): ~0.90 at Boone, ~1.0 on the coast.
+  const altitudeFactor = climate.stationData.pressurePsia / 14.696;
+  const sensibleAirFactor = 1.08 * altitudeFactor;
+  const latentAirFactor = 0.68 * altitudeFactor;
+
   // Sensible: 1.08 * CFM * deltaT
-  const infiltrationHeatLoss = 1.08 * cfmInfiltration * deltaTHeat;
-  const infiltrationSensibleCool = 1.08 * cfmInfiltration * deltaTCool;
+  const infiltrationHeatLoss = sensibleAirFactor * cfmInfiltration * deltaTHeat;
+  const infiltrationSensibleCool = sensibleAirFactor * cfmInfiltration * deltaTCool;
   
   // Latent: 0.68 * CFM * deltaG (moisture grains difference)
-  const infiltrationLatentCool = 0.68 * cfmInfiltration * climate.designGrains;
+  const infiltrationLatentCool = latentAirFactor * cfmInfiltration * climate.designGrains;
   
   // 6. Internal Heat Gains (Sensible & Latent)
-  // Occupants (ASHRAE Ch. 18): 230 BTU/h sensible, 200 BTU/h latent per person.
+  // Occupants (ASHRAE Fundamentals Ch. 17): 230 BTU/h sensible, 200 BTU/h latent per person.
   // In single-story homes: 3 occupants + 1,200 BTU kitchen/appliances.
   // In multi-story homes: 2 occupants on main level + 1,200 BTU appliances; 2 occupants upstairs + 300 BTU electronics.
   let occupantSensible = 0;
@@ -590,11 +604,19 @@ export function calculateFloorLoad(
   
   // Equipment Sizing: raw tons needed and closest recommended unit size
   const rawTons = totalCoolingBtu / 12000;
-  const { tonnage: recommendedTonnage, oversizingPct } = selectEquipmentTonnage(rawTons);
+  const { tonnage: recommendedTonnage } = selectEquipmentTonnage(rawTons);
   
-  // Airflow CFM driven by actual calculated cooling tons (360 CFM/Ton in humid coastal 2A, 380 CFM/Ton in 3A/4A)
-  const cfmPerTon = climate.climateZone === '2A' ? 360 : 380;
-  const totalCfm = Math.round(rawTons * cfmPerTon);
+  // Airflow CFM driven by actual calculated cooling tons. Humid design climates
+  // (>= 50 gr/lb outdoor-indoor difference, i.e. the coast) get 360 CFM/ton for
+  // better moisture removal; everywhere else 380 CFM/ton.
+  const cfmPerTon = climate.designGrains >= HUMID_DESIGN_GRAINS ? 360 : 380;
+  const loadCfm = Math.round(rawTons * cfmPerTon);
+
+  // Ducts must carry what the installed blower moves, not just what the load needs.
+  // A 0.8-ton floor served by a 1.5-ton unit still pushes ~570 CFM through its ducts.
+  const equipmentTons = floor.installedTons && floor.installedTons > 0 ? floor.installedTons : recommendedTonnage;
+  const equipmentOversizingPct = Math.round(((equipmentTons - rawTons) / rawTons) * 100);
+  const totalCfm = Math.round(equipmentTons * cfmPerTon);
   
   // Auxiliary heat strip or furnace sizing
   let auxHeatStripKw: number | undefined;
@@ -700,7 +722,9 @@ export function calculateFloorLoad(
     heatingComponents,
     calculatedCoolingTons: parseFloat(rawTons.toFixed(2)),
     recommendedTonnage,
-    oversizingPercent: oversizingPct,
+    equipmentTons,
+    oversizingPercent: equipmentOversizingPct,
+    loadCfm,
     totalCfm,
     auxHeatStripKw,
     recommendedFurnaceBtu,
@@ -720,7 +744,7 @@ export function calculateHouseLoad(floors: FloorInput[], climate: CountyClimate)
   const totalCoolingBtu = floorResults.reduce((acc, f) => acc + f.totalCoolingBtu, 0);
   const totalHeatingBtu = floorResults.reduce((acc, f) => acc + f.totalHeatingBtu, 0);
   const totalCalculatedTons = parseFloat(floorResults.reduce((acc, f) => acc + f.calculatedCoolingTons, 0).toFixed(2));
-  const totalTonnage = parseFloat(floorResults.reduce((acc, f) => acc + f.recommendedTonnage, 0).toFixed(1));
+  const totalTonnage = parseFloat(floorResults.reduce((acc, f) => acc + f.equipmentTons, 0).toFixed(1));
   const totalCfm = floorResults.reduce((acc, f) => acc + f.totalCfm, 0);
   
   return {

@@ -7,7 +7,7 @@
     "dev": "vite",
     "test": "tsx src/engine/sourceVerification.test.ts && tsx src/engine/physicsAudit.test.ts && tsx src/engine/manualJ.test.ts",
     "verify-sources": "tsx src/engine/sourceVerification.test.ts",
-    "build": "tsx src/engine/sourceVerification.test.ts && tsx src/engine/physicsAudit.test.ts && tsc -b && vite build",
+    "build": "npm test && tsc -b && vite build",
     "deploy": "gh-pages -d dist",
     "preview": "vite preview"
   },

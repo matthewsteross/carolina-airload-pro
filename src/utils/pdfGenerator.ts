@@ -52,7 +52,7 @@ export function generatePermitPdf(
   );
   doc.setFontSize(7.5);
   doc.text(
-    'Engineered load calculation utilizing verified published climatic design conditions and energy code assembly tables.',
+    'Simplified heat-balance load calculation using ASHRAE 2021 climatic design data and typical published assembly values.',
     40,
     52
   );
@@ -72,15 +72,15 @@ export function generatePermitPdf(
 
   // Col 1: Job Details
   doc.text(`Job Site Address: ${project.projectAddress || 'N/A'}, ${project.city || ''}`, 40, 100);
-  doc.text(`Homeowner / Client: ${project.homeownerName || 'Valued Customer'}`, 40, 114);
+  doc.text(`Homeowner / Client: ${project.homeownerName || '________________'}`, 40, 114);
   doc.text(`Permit Application #: ${project.permitNumber || 'Pending Submission'}`, 40, 128);
   doc.text(`Calculation Date: ${today}`, 40, 142);
 
   // Col 2: Contractor Details
   const col2X = 320;
-  doc.text(`Mechanical Contractor: ${project.contractorCompany || 'Licensed Mechanical Contractor'}`, col2X, 100);
-  doc.text(`System Designer / Tech: ${project.contractorName || 'HVAC Specialist'}`, col2X, 114);
-  doc.text(`State License #: ${project.contractorLicense || 'NC/SC Lic. on file'}`, col2X, 128);
+  doc.text(`Mechanical Contractor: ${project.contractorCompany || '________________'}`, col2X, 100);
+  doc.text(`System Designer / Tech: ${project.contractorName || '________________'}`, col2X, 114);
+  doc.text(`State License #: ${project.contractorLicense || '________________'}`, col2X, 128);
   doc.text(`Phone / Contact: ${project.contractorPhone || 'N/A'}`, col2X, 142);
 
   // 3. Official Published Design Conditions
@@ -92,12 +92,12 @@ export function generatePermitPdf(
   const climateRows = [
     [
       `Jurisdiction: ${results.climate.county} County, ${results.climate.state}`,
-      `Weather Station: ${results.climate.station}`,
-      `Climate Zone: ${results.climate.climateZone}`
+      `ASHRAE Station: ${results.climate.station} (${results.climate.stationDistanceMi} mi)`,
+      `Climate Zone: ${results.climate.climateZone} (verify with AHJ)`
     ],
     [
       `Summer Outdoor DB (1%): ${results.climate.summerDb}°F`,
-      `Summer Coincident WB: ${results.climate.summerWb}°F`,
+      `Summer Mean Coincident WB: ${results.climate.summerWb}°F`,
       `Moisture Grains Diff: ${results.climate.designGrains} gr/lb`
     ],
     [
@@ -123,7 +123,7 @@ export function generatePermitPdf(
   doc.line(40, currentY + 5, pageWidth - 40, currentY + 5);
 
   const systemHeaders = [
-    ['Floor / System', 'Area', 'Sensible Clg', 'Latent Clg', 'Total Clg', 'Req. Capacity', 'Selected Size', 'Heating Load', 'Aux / Furnace', 'Design Airflow']
+    ['Floor / System', 'Area', 'Sensible Clg', 'Latent Clg', 'Total Clg', 'Tons Needed', 'Unit Size', 'Heating Load', 'Aux / Furnace', 'Unit Airflow']
   ];
 
   const systemRows = results.floors.map(f => [
@@ -133,7 +133,7 @@ export function generatePermitPdf(
     `${f.latentCoolingBtu.toLocaleString()} BTU`,
     `${f.totalCoolingBtu.toLocaleString()} BTU`,
     `${f.calculatedCoolingTons} T`,
-    `${f.recommendedTonnage.toFixed(1)} Tons`,
+    `${f.equipmentTons.toFixed(1)} Tons`,
     `${f.totalHeatingBtu.toLocaleString()} BTU`,
     f.auxHeatStripKw ? `${f.auxHeatStripKw} kW Strip` : (f.recommendedFurnaceBtu ? `${(f.recommendedFurnaceBtu/1000)}k BTU` : 'N/A'),
     `${f.totalCfm} CFM`
@@ -256,7 +256,7 @@ export function generatePermitPdf(
   sectionIndex++;
 
   const notesText = project.jurisdictionNotes?.trim() || 
-    `Standard submittal for ${results.climate.county} County, ${results.climate.state}. Design parameters strictly conform to local weather station data. Equipment sizing verified within 95%-115% of calculated cooling load per state mechanical code.`;
+    `Design conditions for ${results.climate.county} County, ${results.climate.state} are taken from the nearest ASHRAE 2021 climatic design station (${results.climate.station}). Final equipment selection is made by the contractor against the calculated load shown above.`;
 
   doc.setFontSize(8);
   doc.setFont('helvetica', 'italic');
@@ -264,7 +264,7 @@ export function generatePermitPdf(
   const splitNotes = doc.splitTextToSize(`Notes / AHJ Directives: ${notesText}`, pageWidth - 80);
   doc.text(splitNotes, 40, currentY + 16);
 
-  // Verified Published Data Sources & Audit Trail
+  // Data sources: what was retrieved vs. what is a typical value
   let nextY = currentY + 16 + splitNotes.length * 10 + 6;
 
   if (nextY > 640) {
@@ -275,14 +275,14 @@ export function generatePermitPdf(
   doc.setFontSize(10.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(30, 41, 59);
-  doc.text(`${sectionIndex}. VERIFIED PUBLISHED DATA SOURCES (PROVENANCE AUDIT)`, 40, nextY);
+  doc.text(`${sectionIndex}. DATA SOURCES`, 40, nextY);
   doc.line(40, nextY + 5, pageWidth - 40, nextY + 5);
 
   const sourceRows = [
-    ['Climatic Design Data', `${results.climate.source.document} — ${results.climate.source.tableOrPage}`, `Retrieved: ${results.climate.source.dateRetrieved}`],
-    ['Envelope Assemblies', '2018/2024 North Carolina Energy Conservation Code (NCECC) Table R402.1.2 & ASHRAE Fundamentals Ch. 26', 'Retrieved: 2026-10-14'],
-    ['Fenestration (U & SHGC)', 'National Fenestration Rating Council (NFRC) 100/200 Certified Ratings & NCECC Table R402.1.2', 'Retrieved: 2026-10-14'],
-    ['Infiltration & Duct Gains', 'ASHRAE Fundamentals Ch. 18 & Ch. 21 (Duct Efficiency in Unconditioned Spaces)', 'Retrieved: 2026-10-14']
+    ['Climatic Design Data', `${results.climate.source.document} — ${results.climate.source.tableOrPage}`, `Retrieved ${results.climate.source.dateRetrieved}`],
+    ['Envelope Assemblies', 'Typical U-values for the selected construction, consistent with NCECC Table R402.1.2 and ASHRAE Fundamentals Ch. 26', 'Typical value'],
+    ['Fenestration (U & SHGC)', 'Typical whole-window ratings by glazing type (NFRC 100/200 basis)', 'Typical value'],
+    ['Infiltration, Solar & Ducts', 'Typical allowances per ASHRAE Fundamentals Ch. 17 (residential loads) and Ch. 21 (ducts)', 'Typical value']
   ];
 
   autoTable(doc, {
@@ -314,7 +314,7 @@ export function generatePermitPdf(
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(71, 85, 105);
   const certText = 
-    `I certify that the heat loss and heat gain calculations presented on this document were computed using approved rational engineering methods in accordance with ASHRAE fundamentals and ${results.climate.state === 'NC' ? 'North Carolina Residential Code Section M1401.3' : 'South Carolina Residential Code Section M1401.3'}. All thermal envelope values reflect actual construction plans or field audit measurements. No arbitrary rules-of-thumb were used.`;
+    `I certify that the heat loss and heat gain shown were calculated for this specific house to meet the load calculation requirement of ${results.climate.state === 'NC' ? 'North Carolina Residential Code Section M1401.3' : 'South Carolina Residential Code Section M1401.3'}, using ASHRAE 2021 climatic design data for the jurisdiction and envelope inputs selected from my field assessment of the home. Equipment was not sized by square-foot-per-ton rules.`;
   
   doc.text(doc.splitTextToSize(certText, pageWidth - 100), 50, nextY + 25);
 

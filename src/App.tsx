@@ -40,16 +40,9 @@ import { generatePermitPdf, ProjectMetadata } from './utils/pdfGenerator';
 
 const STORAGE_KEY_CONTRACTOR = 'carolina_airload_contractor_profile';
 
-// Helpful jurisdiction tips for major Carolinas building departments
-const JURISDICTION_DEFAULTS: Record<string, string> = {
-  'Mecklenburg': 'Mecklenburg County Code Enforcement requires matching AHRI certificate for equipment submittal and 92°F/22°F design temps.',
-  'Wake': 'City of Raleigh / Wake County requires design temps matching RDU (92°F / 20°F) and duct leakage test certificate at rough-in.',
-  'Guilford': 'Greensboro Building Inspections requires separate system calculations for multi-story split systems.',
-  'Charleston': 'Charleston County / City of Charleston requires impact-rated glass SHGC compliance and high latent load moisture control.',
-  'Horry': 'Horry County / Myrtle Beach requires coastal wind-borne debris window specs and documented sensible/latent heat split.',
-  'Richland': 'Richland County / Columbia requires 95°F summer cooling design temp and proper heat pump supplemental strip sizing.',
-  'Greenville': 'Greenville County requires equipment sizing within 95%-115% of calculated total cooling load.'
-};
+// Per-county permit office notes. Left empty on purpose: only add a note here once a
+// building department's requirement has been confirmed. Users type their own per job.
+const JURISDICTION_DEFAULTS: Record<string, string> = {};
 
 export default function App() {
   // Navigation Tab State
@@ -68,13 +61,13 @@ export default function App() {
       try {
         const parsed = JSON.parse(saved);
         return {
-          contractorName: parsed.contractorName || 'John Doe',
-          contractorCompany: parsed.contractorCompany || 'Carolina Comfort Heating & Air',
-          contractorLicense: parsed.contractorLicense || 'NC #32456 / SC #M10492',
-          contractorPhone: parsed.contractorPhone || '(704) 555-0199',
-          homeownerName: 'Smith Residence',
-          projectAddress: '124 Oak Haven Dr',
-          city: 'Charlotte',
+          contractorName: parsed.contractorName || '',
+          contractorCompany: parsed.contractorCompany || '',
+          contractorLicense: parsed.contractorLicense || '',
+          contractorPhone: parsed.contractorPhone || '',
+          homeownerName: '',
+          projectAddress: '',
+          city: '',
           permitNumber: '',
           jurisdictionNotes: defaultNotes
         };
@@ -83,13 +76,13 @@ export default function App() {
       }
     }
     return {
-      contractorName: 'John Doe',
-      contractorCompany: 'Carolina Comfort Heating & Air',
-      contractorLicense: 'NC #32456 / SC #M10492',
-      contractorPhone: '(704) 555-0199',
-      homeownerName: 'Smith Residence',
-      projectAddress: '124 Oak Haven Dr',
-      city: 'Charlotte',
+      contractorName: '',
+      contractorCompany: '',
+      contractorLicense: '',
+      contractorPhone: '',
+      homeownerName: '',
+      projectAddress: '',
+      city: '',
       permitNumber: '',
       jurisdictionNotes: defaultNotes
     };
@@ -296,7 +289,7 @@ export default function App() {
             <button
               onClick={() => setShowSourcesModal(true)}
               className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-blue-100 bg-blue-800/80 hover:bg-blue-700 rounded-lg border border-blue-600/50 transition-colors shadow-sm"
-              title="Inspect Verified Data Sources & Provenance"
+              title="Data sources behind the numbers"
             >
               <BookOpen className="w-3.5 h-3.5 text-blue-300" />
               <span>Data Sources</span>
@@ -519,7 +512,7 @@ export default function App() {
               Building Levels & Equipment Sizing
             </h2>
             <p className="text-xs text-slate-500">
-              Each level is calculated with published thermal transmission values to verify code compliance.
+              Each level is calculated from ASHRAE design data for the county and the construction you select.
             </p>
           </div>
 
@@ -573,7 +566,7 @@ export default function App() {
                             {floorResult.calculatedCoolingTons.toFixed(2)} TONS
                           </div>
                           <div className="text-[11px] font-bold text-emerald-400">
-                            (Recommended: {floorResult.recommendedTonnage.toFixed(1)} T)
+                            ({floor.installedTons ? 'Installing' : 'Nearest std size'}: {floorResult.equipmentTons.toFixed(1)} T)
                           </div>
                         </div>
 
@@ -585,9 +578,9 @@ export default function App() {
                         </div>
 
                         <div className="border-l border-slate-700 pl-3">
-                          <div className="text-[10px] text-slate-400">Airflow</div>
+                          <div className="text-[10px] text-slate-400">Airflow (load / unit)</div>
                           <div className="text-xs font-bold text-sky-400">
-                            {floorResult.totalCfm} CFM
+                            {floorResult.loadCfm} / {floorResult.totalCfm} CFM
                           </div>
                         </div>
 
@@ -673,7 +666,7 @@ export default function App() {
                   <div className="space-y-3 p-3.5 bg-slate-50/70 rounded-xl border border-slate-100">
                     <div>
                       <label className="block text-xs font-bold text-slate-600 mb-1">
-                        Wall Assembly (Published U-Value)
+                        Wall Assembly
                       </label>
                       <select
                         value={floor.wallVintage}
@@ -739,7 +732,7 @@ export default function App() {
                   <div className="space-y-3 p-3.5 bg-slate-50/70 rounded-xl border border-slate-100">
                     <div>
                       <label className="block text-xs font-bold text-slate-600 mb-1">
-                        Window Performance (NFRC Certified)
+                        Window Type
                       </label>
                       <select
                         value={floor.windowType}
@@ -765,6 +758,23 @@ export default function App() {
                         <option value="gas_furnace_ac">Gas Furnace + Straight A/C</option>
                         <option value="dual_fuel">Dual Fuel / Hybrid (Heat Pump + Gas)</option>
                       </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">
+                        Unit Being Installed
+                      </label>
+                      <select
+                        value={floor.installedTons ?? ''}
+                        onChange={(e) => updateFloor(floor.id, { installedTons: e.target.value ? parseFloat(e.target.value) : undefined })}
+                        className="w-full bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Auto (nearest: {floorResult?.recommendedTonnage.toFixed(1)} T)</option>
+                        {[1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0].map(t => (
+                          <option key={t} value={t}>{t.toFixed(1)} Tons</option>
+                        ))}
+                      </select>
+                      <div className="text-[10px] text-slate-400 mt-0.5">Ducts and registers are sized to this unit's airflow.</div>
                     </div>
                   </div>
 
@@ -904,7 +914,7 @@ export default function App() {
                 >
                   <span>{f.name}</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isSelected ? 'bg-blue-700 text-blue-100' : 'bg-slate-100 text-slate-600'}`}>
-                    {fResult?.calculatedCoolingTons.toFixed(2)}T ({fResult?.recommendedTonnage.toFixed(1)}T Rec) • {fResult?.totalCfm} CFM
+                    {fResult?.calculatedCoolingTons.toFixed(2)}T ({fResult?.equipmentTons.toFixed(1)}T unit) • {fResult?.totalCfm} CFM
                   </span>
                 </button>
               );
@@ -923,9 +933,9 @@ export default function App() {
 
             <div className="flex items-center space-x-4 bg-slate-800/90 border border-slate-700 px-4 py-1.5 rounded-xl">
               <div>
-                <div className="text-[10px] text-slate-400 font-bold uppercase">Actual Load / Rec</div>
+                <div className="text-[10px] text-slate-400 font-bold uppercase">Load / Unit</div>
                 <div className="text-sm font-black text-white">
-                  {currentDuctResult?.calculatedCoolingTons.toFixed(2)} T <span className="text-emerald-400 text-xs font-bold">({currentDuctResult?.recommendedTonnage.toFixed(1)} T)</span>
+                  {currentDuctResult?.calculatedCoolingTons.toFixed(2)} T <span className="text-emerald-400 text-xs font-bold">({currentDuctResult?.equipmentTons.toFixed(1)} T unit)</span>
                 </div>
               </div>
               <div className="border-l border-slate-700 pl-3">
@@ -1133,13 +1143,13 @@ export default function App() {
           
           <div className="flex items-center space-x-6">
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total House Required Sizing</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total House Load (Tons Needed)</div>
               <div className="flex items-baseline space-x-2">
                 <span className="text-2xl font-black text-slate-900">
                   {calculationResult.totalCalculatedTons.toFixed(2)} TONS
                 </span>
                 <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                  (Recommended: {calculationResult.totalTonnage.toFixed(1)} T)
+                  (Units: {calculationResult.totalTonnage.toFixed(1)} T)
                 </span>
                 <span className="text-xs font-semibold text-slate-500 hidden sm:inline">
                   across {calculationResult.floors.length} {calculationResult.floors.length === 1 ? 'level' : 'levels'}
@@ -1165,7 +1175,7 @@ export default function App() {
               <div className="text-[10px] text-slate-400 uppercase font-semibold">Code Authority</div>
               <div className="flex items-center space-x-1 text-xs font-bold text-emerald-600">
                 <ShieldCheck className="w-4 h-4" />
-                <span>{state} Code M1401.3 Pass</span>
+                <span>{state} M1401.3 load calculation</span>
               </div>
             </div>
           </div>
@@ -1177,7 +1187,7 @@ export default function App() {
               className="inline-flex items-center space-x-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-black shadow-lg hover:shadow-xl transition-all active:scale-95"
             >
               <FileText className="w-4 h-4" />
-              <span>Generate Official Permit PDF</span>
+              <span>Generate Permit PDF</span>
             </button>
           </div>
 
@@ -1194,8 +1204,8 @@ export default function App() {
                   <BookOpen className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">Verified Data Sourcing & Provenance</h3>
-                  <p className="text-xs text-slate-500">Every calculation value is tied to published engineering standards.</p>
+                  <h3 className="text-base font-bold text-slate-900">Data Sources</h3>
+                  <p className="text-xs text-slate-500">Where each number comes from, and which ones are typical values rather than looked-up data.</p>
                 </div>
               </div>
               <button
@@ -1213,32 +1223,36 @@ export default function App() {
                 <p className="text-slate-600">
                   <strong>Document:</strong> {climate.source.document}<br />
                   <strong>Table/Section:</strong> {climate.source.tableOrPage}<br />
-                  <strong>Retrieval Date:</strong> {climate.source.dateRetrieved}<br />
-                  <strong>Verification URL:</strong> <a href={climate.source.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{climate.source.url}</a>
+                  <strong>Station:</strong> {climate.station} (WMO {climate.stationData.wmo}), {climate.stationDistanceMi} mi from the county center, elevation {climate.stationData.elevationFt.toLocaleString()} ft (county ~{climate.countyElevationFt.toLocaleString()} ft)<br />
+                  <strong>Retrieved:</strong> {climate.source.dateRetrieved} from <a href={climate.source.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{climate.source.url}</a> (ASHRAE 2021 data set)
+                  {climate.countyElevationFt - climate.stationData.elevationFt > 800 && (
+                    <><br /><strong className="text-amber-700">Note:</strong> much of this county sits well above the station. Homes on high ground can see colder winter design temperatures than shown.</>
+                  )}
                 </p>
               </div>
 
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <div className="font-bold text-slate-900 text-sm mb-1">Building Thermal Envelope Assemblies</div>
+                <div className="font-bold text-slate-900 text-sm mb-1">Building Thermal Envelope Assemblies <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">typical values</span></div>
                 <p className="text-slate-600">
                   <strong>Document:</strong> 2018/2024 North Carolina Energy Conservation Code (NCECC) / IECC Table R402.1.2<br />
-                  <strong>Thermal Resistance:</strong> Wood frame wall U-values from ASHRAE Fundamentals Chapter 26.<br />
-                  <strong>Ceiling R-Values:</strong> Standard NC/SC code flat ceiling R-38 ($U=0.026$) and R-30 ($U=0.033$).
+                  <strong>Walls:</strong> R-13 2x4 U-0.084 and R-20 code wall U-0.060 (IECC equivalent U-factors); other vintages are typical assembly values.<br />
+                  <strong>Ceilings:</strong> R-38 U-0.030 and R-30 U-0.035 (IECC equivalent U-factors). Code tables list minimum R-values; these are whole-assembly values.
                 </p>
               </div>
 
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <div className="font-bold text-slate-900 text-sm mb-1">Fenestration Performance (U-Factor & SHGC)</div>
+                <div className="font-bold text-slate-900 text-sm mb-1">Fenestration Performance (U-Factor & SHGC) <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">typical values</span></div>
                 <p className="text-slate-600">
                   <strong>Document:</strong> National Fenestration Rating Council (NFRC) 100/200 Certified Ratings & NCECC Table R402.1.2.<br />
-                  <strong>Code Standard:</strong> Double-pane Low-E maximum U=0.30, maximum SHGC=0.25 for NC/SC climate zones.
+                  <strong>Code Standard:</strong> Low-E default is U-0.30 / SHGC-0.25 (code maximum in climate zone 3). Use the window label (NFRC sticker) when known.
                 </p>
               </div>
 
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <div className="font-bold text-slate-900 text-sm mb-1">Infiltration & Duct Distribution Losses</div>
+                <div className="font-bold text-slate-900 text-sm mb-1">Infiltration, Solar, Duct & Internal Gains <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">typical values</span></div>
                 <p className="text-slate-600">
-                  <strong>Document:</strong> ASHRAE Fundamentals Chapter 18 (Cooling Load Principles) and Chapter 21 (Duct Design in Unconditioned Buffer Zones).
+                  <strong>Document:</strong> ASHRAE Fundamentals Chapter 17 (Residential Cooling and Heating Load Calculations) and Chapter 21 (Duct Design).<br />
+                  <strong>Method:</strong> Simplified heat balance. Air-change rates, the solar glass factor, duct gain percentages and occupant/appliance gains are typical allowances, not per-house measurements.
                 </p>
               </div>
             </div>
