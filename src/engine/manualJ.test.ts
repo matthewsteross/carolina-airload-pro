@@ -25,7 +25,7 @@ const meck = getCountyClimate('NC', 'Mecklenburg');
 assert(meck.summerDb === 92 && meck.winterDb === 22, `Mecklenburg (Charlotte) climate is 92°F / 22°F`);
 
 const chas = getCountyClimate('SC', 'Charleston');
-assert(chas.summerDb === 91 && chas.designGrains === 54, `Charleston SC has 91°F summer DB and 54 gr/lb latent design difference`);
+assert(chas.summerDb === 91 && chas.designGrains === 52, `Charleston SC has 91°F summer DB and 52 gr/lb latent design difference`);
 
 const boone = getCountyClimate('NC', 'Watauga');
 assert(boone.summerDb === 82 && boone.winterDb === 9, `Watauga (Boone NC) has 82°F summer and 9°F winter`);
@@ -46,7 +46,8 @@ assert(calculateDuctSize(180) === '8" Round Flex', `180 CFM sizes to 8" Round Fl
 assert(calculateDuctSize(320) === '10" Round Flex', `320 CFM sizes to 10" Round Flex`);
 
 assert(calculateVentSize(80) === '4" x 12" Floor/Ceiling Register', `80 CFM sizes to 4" x 12" register`);
-assert(calculateVentSize(150) === '6" x 12" Floor/Ceiling Register', `150 CFM sizes to 6" x 12" register`);
+assert(calculateVentSize(150) === '6" x 10" Floor/Ceiling Register', `150 CFM sizes to 6" x 10" register`);
+assert(calculateVentSize(180) === '6" x 12" Floor/Ceiling Register', `180 CFM sizes to 6" x 12" register`);
 
 console.log('\n--- Testing Full House Load Calculation ---');
 const testFloors: FloorInput[] = [

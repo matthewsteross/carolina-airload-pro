@@ -12,17 +12,34 @@ function validateSource(name: string, source: SourceRecord | undefined) {
   if (!source) {
     throw new Error(`SOURCE INTEGRITY FAILURE: "${name}" has NO source record!`);
   }
-  if (!source.document || source.document.trim() === '') {
-    throw new Error(`SOURCE INTEGRITY FAILURE: "${name}" is missing source.document!`);
+  if (!source.document || source.document.trim().length < 5) {
+    throw new Error(`SOURCE INTEGRITY FAILURE: "${name}" has empty or insufficient source.document!`);
   }
-  if (!source.tableOrPage || source.tableOrPage.trim() === '') {
+  // Verify recognized authority
+  const recognizedAuthorities = ['ASHRAE', 'NOAA', 'NCECC', 'IECC', 'NFRC', 'SMACNA', 'IRC', 'NCRC', 'SCRC'];
+  const hasAuthority = recognizedAuthorities.some(auth => source.document.includes(auth));
+  if (!hasAuthority) {
+    throw new Error(`SOURCE INTEGRITY FAILURE: "${name}" document must cite a recognized engineering authority (${recognizedAuthorities.join(', ')}). Found: "${source.document}"`);
+  }
+
+  if (!source.tableOrPage || source.tableOrPage.trim().length < 5) {
     throw new Error(`SOURCE INTEGRITY FAILURE: "${name}" is missing source.tableOrPage!`);
   }
-  if (!source.url || source.url.trim() === '') {
-    throw new Error(`SOURCE INTEGRITY FAILURE: "${name}" is missing source.url!`);
+  // Must cite specific Chapter, Table, Section, or Page
+  const hasSpecificRef = /table|chapter|section|page|norm/i.test(source.tableOrPage);
+  if (!hasSpecificRef) {
+    throw new Error(`SOURCE INTEGRITY FAILURE: "${name}" tableOrPage must cite a specific Table, Chapter, Section, or Page. Found: "${source.tableOrPage}"`);
   }
-  if (!source.dateRetrieved || source.dateRetrieved.trim() === '') {
-    throw new Error(`SOURCE INTEGRITY FAILURE: "${name}" is missing source.dateRetrieved!`);
+
+  if (!source.url || !source.url.startsWith('https://')) {
+    throw new Error(`SOURCE INTEGRITY FAILURE: "${name}" missing or invalid HTTPS source.url! Found: "${source.url}"`);
+  }
+  if (/example\.com|placeholder|todo/i.test(source.url)) {
+    throw new Error(`SOURCE INTEGRITY FAILURE: "${name}" contains placeholder URL: "${source.url}"`);
+  }
+
+  if (!source.dateRetrieved || !/^\d{4}-\d{2}-\d{2}$/.test(source.dateRetrieved)) {
+    throw new Error(`SOURCE INTEGRITY FAILURE: "${name}" missing valid ISO YYYY-MM-DD dateRetrieved! Found: "${source.dateRetrieved}"`);
   }
 }
 

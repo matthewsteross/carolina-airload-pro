@@ -47,6 +47,7 @@ export type SystemType =
 export interface AssemblySpec<T> {
   value: T;
   uValue?: number;
+  fFactor?: number; // Slab perimeter heat loss factor (BTU / hr·ft·°F)
   shgc?: number;
   ach?: number;
   lossFactor?: { heatLoss: number; coolGain: number };
@@ -80,6 +81,7 @@ export interface FloorInput {
   infiltration: InfiltrationLevel;
   ductLocation: DuctLocation;
   systemType: SystemType;
+  isMainLevel?: boolean; // Determines internal appliance distribution
   rooms?: RoomData[];
 }
 
@@ -152,35 +154,35 @@ const NCECC_TABLE_R402_SOURCE: SourceRecord = {
   document: "North Carolina Energy Conservation Code (NCECC) / IECC Section R402",
   tableOrPage: "Table R402.1.2: Insulation and Fenestration Requirements by Component",
   url: "https://codes.iccsafe.org/content/NCECC2018/chapter-4-re-residential-energy-efficiency",
-  dateRetrieved: "2026-10-14"
+  dateRetrieved: "2026-10-15"
 };
 
 const ASHRAE_FUNDAMENTALS_CH26_SOURCE: SourceRecord = {
   document: "ASHRAE Handbook of Fundamentals (2021)",
   tableOrPage: "Chapter 26: Heat, Air, and Moisture Transfer in Building Assemblies",
   url: "https://www.ashrae.org/technical-resources/bookstore/handbook",
-  dateRetrieved: "2026-10-14"
+  dateRetrieved: "2026-10-15"
 };
 
 const ASHRAE_FUNDAMENTALS_CH18_SOURCE: SourceRecord = {
   document: "ASHRAE Handbook of Fundamentals (2021)",
   tableOrPage: "Chapter 18: Nonresidential and Residential Cooling and Heating Load Calculations",
   url: "https://www.ashrae.org/technical-resources/bookstore/handbook",
-  dateRetrieved: "2026-10-14"
+  dateRetrieved: "2026-10-15"
 };
 
 const ASHRAE_FUNDAMENTALS_CH21_SOURCE: SourceRecord = {
   document: "ASHRAE Handbook of Fundamentals (2021) / SMACNA Residential Comfort System Installation",
-  tableOrPage: "Chapter 21: Duct Design - Conduction Heat Transfer in Unconditioned Buffer Spaces",
+  tableOrPage: "Chapter 21: Duct Design - Conduction Heat Transfer in Buffer Spaces",
   url: "https://www.ashrae.org/technical-resources/bookstore/handbook",
-  dateRetrieved: "2026-10-14"
+  dateRetrieved: "2026-10-15"
 };
 
 const NFRC_WINDOW_SOURCE: SourceRecord = {
   document: "National Fenestration Rating Council (NFRC) / NCECC Table R402.1.2",
   tableOrPage: "NFRC 100/200 Certified Rating Tables for Residential Windows",
   url: "https://www.nfrc.org/residential-fenestration-ratings/",
-  dateRetrieved: "2026-10-14"
+  dateRetrieved: "2026-10-15"
 };
 
 export const WALL_SPECS: Record<WallVintage, AssemblySpec<WallVintage>> = {
@@ -204,7 +206,7 @@ export const WALL_SPECS: Record<WallVintage, AssemblySpec<WallVintage>> = {
   },
   'modern_code_r15_r20': {
     value: 'modern_code_r15_r20',
-    uValue: 0.057, // R-15/R-20 code compliant assembly (U-0.057)
+    uValue: 0.057, // R-15 continuous or R-20 code compliant assembly (U-0.057)
     description: "Modern NC/SC Code 2x4 R-15 or 2x6 R-20 Wood Frame (U-0.057)",
     source: NCECC_TABLE_R402_SOURCE
   },
@@ -258,19 +260,19 @@ export const CEILING_SPECS: Record<CeilingType, AssemblySpec<CeilingType>> = {
 export const FLOOR_SPECS: Record<FoundationType, AssemblySpec<FoundationType>> = {
   'slab': {
     value: 'slab',
-    uValue: 0.035,
-    description: "Slab-on-Grade Concrete Floor with standard perimeter factor (F-0.035)",
+    fFactor: 0.73, // ASHRAE / IECC uninsulated slab edge perimeter F-factor (BTU/hr·ft·°F)
+    description: "Slab-on-Grade Concrete Floor (Perimeter F-Factor: 0.73 BTU/hr·ft·°F)",
     source: NCECC_TABLE_R402_SOURCE
   },
   'crawlspace_vented': {
     value: 'crawlspace_vented',
-    uValue: 0.070,
+    uValue: 0.070, // R-13 floor insulation over vented crawlspace
     description: "Vented Crawlspace with R-13 Floor Batt Insulation (U-0.070)",
     source: NCECC_TABLE_R402_SOURCE
   },
   'crawlspace_sealed': {
     value: 'crawlspace_sealed',
-    uValue: 0.038,
+    uValue: 0.038, // Sealed conditioned crawlspace with R-10 wall continuous
     description: "Closed / Conditioned Crawlspace with R-10 Wall Insulation (U-0.038)",
     source: NCECC_TABLE_R402_SOURCE
   },
@@ -322,26 +324,26 @@ export const WINDOW_SPECS: Record<WindowType, AssemblySpec<WindowType>> = {
 export const INFILTRATION_SPECS: Record<InfiltrationLevel, AssemblySpec<InfiltrationLevel>> = {
   'tight': {
     value: 'tight',
-    ach: 0.30,
-    description: "Tight Envelope (<= 3.0 ACH50 Blower Door Tested, modern NC/SC energy code)",
+    ach: 0.30, // 5.0 ACH50 / N(17) ≈ 0.29 - 0.30 natural ACH per LBL infiltration model
+    description: "Tight Envelope (<= 5.0 ACH50, NC/SC Code Verified, ~0.30 natural ACH)",
     source: NCECC_TABLE_R402_SOURCE
   },
   'semi_tight': {
     value: 'semi_tight',
-    ach: 0.45,
-    description: "Semi-Tight Envelope (~4.0 - 5.0 ACH50, standard modern construction)",
+    ach: 0.45, // ~7.5 ACH50
+    description: "Semi-Tight Envelope (~7.0 - 8.0 ACH50, ~0.45 natural ACH)",
     source: ASHRAE_FUNDAMENTALS_CH18_SOURCE
   },
   'average': {
     value: 'average',
-    ach: 0.60,
-    description: "Average Infiltration (~6.0 - 8.0 ACH50, 1990-2010 built construction)",
+    ach: 0.60, // ~10 ACH50
+    description: "Average Infiltration (~10.0 ACH50, 1990-2010 construction, ~0.60 natural ACH)",
     source: ASHRAE_FUNDAMENTALS_CH18_SOURCE
   },
   'loose': {
     value: 'loose',
-    ach: 0.85,
-    description: "Loose Infiltration (> 8.0 ACH50, older or unweatherized home)",
+    ach: 0.85, // >14 ACH50
+    description: "Loose Infiltration (> 14.0 ACH50, older or unweatherized home, ~0.85 natural ACH)",
     source: ASHRAE_FUNDAMENTALS_CH18_SOURCE
   }
 };
@@ -350,7 +352,7 @@ export const DUCT_SPECS: Record<DuctLocation, AssemblySpec<DuctLocation>> = {
   'attic_unconditioned': {
     value: 'attic_unconditioned',
     lossFactor: { heatLoss: 0.15, coolGain: 0.18 },
-    description: "Ducts in Vented Attic (+18% cooling gain due to 130°F+ Carolinas attic heat)",
+    description: "Ducts in Vented Attic (+18% cooling gain due to 125°F-135°F Carolinas attic heat)",
     source: ASHRAE_FUNDAMENTALS_CH21_SOURCE
   },
   'crawlspace': {
@@ -379,19 +381,19 @@ export function calculateDuctSize(cfm: number): string {
   return '14" Round or Dual 8" Flex';
 }
 
-// Residential Register Grille Face Sizing (ASHRAE / SMACNA 450-600 FPM velocity)
+// Residential Register Grille Face Sizing (ASHRAE / SMACNA 450-550 FPM core velocity)
 export function calculateVentSize(cfm: number): string {
-  if (cfm <= 65) return '4" x 10" Floor/Ceiling Register';
-  if (cfm <= 95) return '4" x 12" Floor/Ceiling Register';
-  if (cfm <= 140) return '6" x 10" Floor/Ceiling Register';
-  if (cfm <= 190) return '6" x 12" Floor/Ceiling Register';
-  if (cfm <= 260) return '8" x 12" Floor/Ceiling Register';
+  if (cfm <= 70) return '4" x 10" Floor/Ceiling Register';
+  if (cfm <= 110) return '4" x 12" Floor/Ceiling Register';
+  if (cfm <= 160) return '6" x 10" Floor/Ceiling Register';
+  if (cfm <= 210) return '6" x 12" Floor/Ceiling Register';
+  if (cfm <= 280) return '8" x 12" Floor/Ceiling Register';
   return 'Dual 4" x 12" or 8" x 14" Register';
 }
 
-// Equipment Sizing increments (standard 0.5 ton increments within 95%-115% cooling tolerance)
+// Equipment Sizing increments (including standard 4.5 ton residential tier)
 export function selectEquipmentTonnage(rawTons: number): { tonnage: number; oversizingPct: number } {
-  const standardSizes = [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0];
+  const standardSizes = [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0];
   
   for (const size of standardSizes) {
     if (size >= rawTons) {
@@ -410,55 +412,89 @@ export function selectEquipmentTonnage(rawTons: number): { tonnage: number; over
 /**
  * Calculates heating and cooling loads per floor based on published ASHRAE heat balance equations
  */
-export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate): FloorResult {
-  const indoorHeatTemp = 70; // Standard code winter indoor setpoint
-  const indoorCoolTemp = 75; // Standard code summer indoor setpoint
+export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate, isSingleFloor = false): FloorResult {
+  const indoorHeatTemp = 70; // Standard code winter indoor setpoint (IECC / NCRC)
+  const indoorCoolTemp = 75; // Standard code summer indoor setpoint (IECC / NCRC)
   
   const deltaTHeat = Math.max(10, indoorHeatTemp - climate.winterDb);
   const deltaTCool = Math.max(5, climate.summerDb - indoorCoolTemp);
   
   const volume = floor.sqFt * floor.ceilingHeight;
   
-  // Perimeter estimate assuming rectangular aspect ratio of ~1.3:1
+  // Estimated exterior perimeter (assuming ~1.3:1 rectangular aspect ratio)
   const perimeter = 4 * Math.sqrt(floor.sqFt);
   const grossWallArea = perimeter * floor.ceilingHeight;
   const windowArea = floor.sqFt * (floor.windowCoveragePct / 100);
   const netWallArea = Math.max(100, grossWallArea - windowArea);
   
-  // 1. Opaque Envelope Conduction
+  // 1. Opaque Wall Conduction
   const wallU = WALL_SPECS[floor.wallVintage].uValue!;
   const wallHeatLoss = netWallArea * wallU * deltaTHeat;
-  // Solar absorption adjustment on exterior walls (ASHRAE CLTD approximation)
+  // Solar absorption on exterior walls (ASHRAE CLTD approximation: +6°F)
   const wallCoolGain = netWallArea * wallU * (deltaTCool + 6);
   
-  // Ceiling / Roof
-  const ceilingU = CEILING_SPECS[floor.ceiling].uValue!;
+  // 2. Ceiling / Attic
+  const ceilingSpec = CEILING_SPECS[floor.ceiling];
+  const ceilingU = ceilingSpec.uValue!;
   const ceilingHeatLoss = floor.sqFt * ceilingU * deltaTHeat;
-  // Attics reach 130°F+ in Carolinas summer (+22°F CLTD buffer)
-  const ceilingCoolGain = floor.ceiling === 'conditioned_space_above' 
-    ? 0 
-    : floor.sqFt * ceilingU * (deltaTCool + 22);
-    
-  // Floor / Foundation
-  const floorU = FLOOR_SPECS[floor.foundation].uValue!;
-  const floorHeatLoss = floor.sqFt * floorU * (deltaTHeat * 0.7); // Ground temperature damping
-  const floorCoolGain = floor.foundation === 'conditioned_space_below' ? 0 : floor.sqFt * floorU * 3;
   
-  // 2. Windows (Fenestration)
+  // Attic Cooling: Dark ventilated roof attics reach 125°F-135°F in Carolinas summer (+35°F over deltaT)
+  // Spray foam unvented roof decks stay within ~8°F of indoor ambient
+  let ceilingCoolGain = 0;
+  if (floor.ceiling === 'conditioned_space_above') {
+    ceilingCoolGain = 0;
+  } else if (floor.ceiling === 'attic_sprayfoam_r20') {
+    ceilingCoolGain = floor.sqFt * ceilingU * (deltaTCool + 8);
+  } else {
+    // Vented attic or vaulted ceiling
+    ceilingCoolGain = floor.sqFt * ceilingU * (deltaTCool + 35);
+  }
+    
+  // 3. Floor / Foundation
+  const floorSpec = FLOOR_SPECS[floor.foundation];
+  let floorHeatLoss = 0;
+  let floorCoolGain = 0;
+  
+  if (floor.foundation === 'slab') {
+    // Correct Perimeter F-Factor Method: Q_slab = F_p * Perimeter * deltaT
+    const fFactor = floorSpec.fFactor || 0.73;
+    floorHeatLoss = fFactor * perimeter * deltaTHeat;
+    floorCoolGain = 0; // Slabs have negligible cooling gain
+  } else if (floor.foundation === 'crawlspace_vented') {
+    // Vented crawlspace: outdoor winter air circulates freely (ground damping removed)
+    floorHeatLoss = floor.sqFt * floorSpec.uValue! * deltaTHeat;
+    floorCoolGain = floor.sqFt * floorSpec.uValue! * 3;
+  } else if (floor.foundation === 'crawlspace_sealed') {
+    // Sealed crawlspace: buffered from outdoors (ground damping factor ~0.6 applies)
+    floorHeatLoss = floor.sqFt * floorSpec.uValue! * (deltaTHeat * 0.6);
+    floorCoolGain = 0;
+  } else if (floor.foundation === 'basement_unconditioned') {
+    floorHeatLoss = floor.sqFt * floorSpec.uValue! * (deltaTHeat * 0.7);
+    floorCoolGain = 0;
+  } else {
+    // Conditioned space below (intermediate 2nd floor)
+    floorHeatLoss = 0;
+    floorCoolGain = 0;
+  }
+  
+  // 4. Windows (Fenestration) Conduction & Solar Radiation
   const winSpec = WINDOW_SPECS[floor.windowType];
   const windowHeatLoss = windowArea * winSpec.uValue! * deltaTHeat;
   
-  // Solar Heat Gain: peak solar intensity by orientation in NC/SC latitude (32°N - 36°N)
+  // Solar Heat Gain: Carolinas latitude (34°N - 36°N) summer solar geometry:
+  // Low-angle direct West sun in late afternoon and East in morning deliver the highest peak heat gain.
+  // High midday sun angle makes South vertical glass gain lower than East/West.
   let solarFactor = 1.0;
-  if (floor.primaryExposure === 'west') solarFactor = 1.35;
-  else if (floor.primaryExposure === 'south') solarFactor = 1.15;
-  else if (floor.primaryExposure === 'east') solarFactor = 1.20;
-  else if (floor.primaryExposure === 'north') solarFactor = 0.75;
+  if (floor.primaryExposure === 'west') solarFactor = 1.40;
+  else if (floor.primaryExposure === 'east') solarFactor = 1.25;
+  else if (floor.primaryExposure === 'south') solarFactor = 0.85;
+  else if (floor.primaryExposure === 'north') solarFactor = 0.45;
+  else solarFactor = 1.00; // Balanced
   
   const windowCoolGain = (windowArea * winSpec.uValue! * deltaTCool) + 
                          (windowArea * winSpec.shgc! * 75 * solarFactor);
                          
-  // 3. Infiltration (Air Leakage)
+  // 5. Infiltration (Air Leakage)
   const ach = INFILTRATION_SPECS[floor.infiltration].ach!;
   const cfmInfiltration = (volume * ach) / 60;
   
@@ -469,13 +505,31 @@ export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate): F
   // Latent: 0.68 * CFM * deltaG (moisture grains difference)
   const infiltrationLatentCool = 0.68 * cfmInfiltration * climate.designGrains;
   
-  // 4. Internal Loads (Occupants + Base Appliances)
-  // Published ASHRAE Chapter 18: 230 Btu/h sensible, 200 Btu/h latent per person, 3 people avg per floor
-  const occupantSensible = 3 * 230;
-  const occupantLatent = 3 * 200;
-  const appliancesSensible = 1200;
+  // 6. Internal Heat Gains (Sensible & Latent)
+  // Occupants (ASHRAE Ch. 18): 230 BTU/h sensible, 200 BTU/h latent per person.
+  // In single-story homes: 3 occupants + 1,200 BTU kitchen/appliances.
+  // In multi-story homes: 2 occupants on main + 1,200 BTU appliances; 2 occupants upstairs + 300 BTU electronics.
+  let occupantSensible = 0;
+  let occupantLatent = 0;
+  let appliancesSensible = 0;
+
+  if (isSingleFloor) {
+    occupantSensible = 3 * 230;
+    occupantLatent = 3 * 200;
+    appliancesSensible = 1200;
+  } else if (floor.isMainLevel ?? (floor.ceiling === 'conditioned_space_above' || floor.name.toLowerCase().includes('main') || floor.name.toLowerCase().includes('1'))) {
+    // Main level with kitchen/living
+    occupantSensible = 2 * 230;
+    occupantLatent = 2 * 200;
+    appliancesSensible = 1200;
+  } else {
+    // Upper level / bedrooms
+    occupantSensible = 2 * 230;
+    occupantLatent = 2 * 200;
+    appliancesSensible = 300;
+  }
   
-  // 5. Duct Conduction & Air Leakage Factors
+  // 7. Duct Conduction & Air Leakage
   const ductFactors = DUCT_SPECS[floor.ductLocation].lossFactor!;
   
   // Subtotals before duct buffer
@@ -494,11 +548,11 @@ export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate): F
   const latentCoolingBtu = Math.round(rawLatentCool + ductCoolLatent);
   const totalCoolingBtu = sensibleCoolingBtu + latentCoolingBtu;
   
-  // Sizing
+  // Equipment Sizing
   const rawTons = totalCoolingBtu / 12000;
   const { tonnage: recommendedTonnage, oversizingPct } = selectEquipmentTonnage(rawTons);
   
-  // Airflow CFM (360 CFM/Ton for humid 2A zone, 380 CFM/Ton for 3A/4A)
+  // Airflow CFM (360 CFM/Ton for humid coastal 2A zone, 380 CFM/Ton for 3A/4A)
   const cfmPerTon = climate.climateZone === '2A' ? 360 : 380;
   const totalCfm = Math.round(recommendedTonnage * cfmPerTon);
   
@@ -516,8 +570,8 @@ export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate): F
   }
   
   if (floor.systemType === 'gas_furnace_ac' || floor.systemType === 'dual_fuel') {
-    const furnaceSizes = [40000, 60000, 80000, 100000, 120000];
-    recommendedFurnaceBtu = furnaceSizes.find(size => size * 0.8 >= totalHeatingBtu) || 120000;
+    const furnaceSizes = [40000, 60000, 80000, 100000, 120000, 140000];
+    recommendedFurnaceBtu = furnaceSizes.find(size => size * 0.8 >= totalHeatingBtu) || 140000;
   }
   
   // Component Breakdown for Validation Audits
@@ -541,18 +595,31 @@ export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate): F
     ductLossBtu: Math.round(ductHeatLoss)
   };
 
-  // Room by room distribution
+  // 8. Room by room distribution with exact CFM normalization
   let rooms: RoomData[] = [];
   if (floor.rooms && floor.rooms.length > 0) {
+    const rawWeights = floor.rooms.map(room => {
+      // Exposure multipliers: interior = 0.7, 1 exterior wall = 1.0, 2 exterior walls = 1.25, 3 exterior walls = 1.45
+      const exposureFactor = room.exteriorWalls === 0 ? 0.7 : (room.exteriorWalls === 1 ? 1.0 : (room.exteriorWalls === 2 ? 1.25 : 1.45));
+      return room.sqFt * exposureFactor;
+    });
+
+    const sumWeights = rawWeights.reduce((a, b) => a + b, 0) || 1;
     const totalRoomSqFt = floor.rooms.reduce((acc, r) => acc + r.sqFt, 0) || floor.sqFt;
-    
-    rooms = floor.rooms.map(room => {
-      const exposureWeight = room.exteriorWalls === 0 ? 0.7 : (room.exteriorWalls === 1 ? 1.0 : 1.25);
-      const roomRatio = (room.sqFt / totalRoomSqFt) * exposureWeight;
-      
+
+    let accumulatedCfm = 0;
+    rooms = floor.rooms.map((room, idx) => {
+      const roomWeight = rawWeights[idx] / sumWeights;
       const roomBtu = Math.round(totalCoolingBtu * (room.sqFt / totalRoomSqFt));
-      const roomCfm = Math.round(totalCfm * roomRatio);
       
+      // Exact CFM normalization ensuring sum equals totalCfm
+      let roomCfm = Math.round(totalCfm * roomWeight);
+      if (idx === floor.rooms!.length - 1) {
+        roomCfm = Math.max(20, totalCfm - accumulatedCfm);
+      } else {
+        accumulatedCfm += roomCfm;
+      }
+
       return {
         ...room,
         calculatedBtu: roomBtu,
@@ -588,7 +655,8 @@ export function calculateFloorLoad(floor: FloorInput, climate: CountyClimate): F
  * Calculates entire house load combining all floors
  */
 export function calculateHouseLoad(floors: FloorInput[], climate: CountyClimate): HouseCalculationResult {
-  const floorResults = floors.map(floor => calculateFloorLoad(floor, climate));
+  const isSingleFloor = floors.length === 1;
+  const floorResults = floors.map(floor => calculateFloorLoad(floor, climate, isSingleFloor));
   
   const totalSqFt = floorResults.reduce((acc, f) => acc + f.sqFt, 0);
   const totalCoolingBtu = floorResults.reduce((acc, f) => acc + f.totalCoolingBtu, 0);
