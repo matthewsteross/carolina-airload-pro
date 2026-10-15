@@ -195,12 +195,65 @@ export function generatePermitPdf(
     styles: { cellPadding: 3 }
   });
 
-  // 6. Local AHJ / Jurisdiction Special Notes
+  // Optional: Room-by-Room Airflow & Duct Schedule (Included if any rooms added)
+  let sectionIndex = 5;
+  const hasRooms = results.floors.some(f => f.rooms && f.rooms.length > 0);
+  if (hasRooms) {
+    currentY = (doc as any).lastAutoTable.finalY + 14;
+    if (currentY > 620) {
+      doc.addPage();
+      currentY = 40;
+    }
+    doc.setFontSize(10.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
+    doc.text(`${sectionIndex}. ROOM-BY-ROOM AIRFLOW & DUCT SIZING SCHEDULE`, 40, currentY);
+    doc.line(40, currentY + 5, pageWidth - 40, currentY + 5);
+    sectionIndex++;
+
+    const ductHeaders = [
+      ['Level', 'Room Name', 'Area', 'Exposure', 'Airflow', 'Cooling Load', 'Equal Friction Duct', 'Supply Register']
+    ];
+
+    const ductRows: string[][] = [];
+    results.floors.forEach(f => {
+      f.rooms.forEach(r => {
+        ductRows.push([
+          f.name,
+          r.name,
+          `${r.sqFt} sqft`,
+          r.exteriorWalls === 0 ? 'Interior' : `${r.exteriorWalls} Ext. Wall${r.exteriorWalls > 1 ? 's' : ''}`,
+          `${r.calculatedCfm || 0} CFM`,
+          `${(r.calculatedBtu || 0).toLocaleString()} BTU`,
+          r.suggestedDuctSize || '6" Flex',
+          r.suggestedVentSize || '4" x 10"'
+        ]);
+      });
+    });
+
+    autoTable(doc, {
+      startY: currentY + 10,
+      head: ductHeaders,
+      body: ductRows,
+      theme: 'grid',
+      headStyles: { fillColor: [14, 116, 144], fontSize: 7, halign: 'center' },
+      bodyStyles: { fontSize: 7, halign: 'center' },
+      styles: { cellPadding: 3 }
+    });
+  }
+
+  // Local AHJ / Jurisdiction Special Notes
   currentY = (doc as any).lastAutoTable.finalY + 14;
+  if (currentY > 640) {
+    doc.addPage();
+    currentY = 40;
+  }
   doc.setFontSize(10.5);
   doc.setFont('helvetica', 'bold');
-  doc.text('5. LOCAL JURISDICTION & AHJ PERMIT OFFICE REQUIREMENTS', 40, currentY);
+  doc.setTextColor(30, 41, 59);
+  doc.text(`${sectionIndex}. LOCAL JURISDICTION & AHJ PERMIT OFFICE REQUIREMENTS`, 40, currentY);
   doc.line(40, currentY + 5, pageWidth - 40, currentY + 5);
+  sectionIndex++;
 
   const notesText = project.jurisdictionNotes?.trim() || 
     `Standard submittal for ${results.climate.county} County, ${results.climate.state}. Design parameters strictly conform to local weather station data. Equipment sizing verified within 95%-115% of calculated cooling load per state mechanical code.`;
@@ -211,7 +264,7 @@ export function generatePermitPdf(
   const splitNotes = doc.splitTextToSize(`Notes / AHJ Directives: ${notesText}`, pageWidth - 80);
   doc.text(splitNotes, 40, currentY + 16);
 
-  // 7. Verified Published Data Sources & Audit Trail
+  // Verified Published Data Sources & Audit Trail
   let nextY = currentY + 16 + splitNotes.length * 10 + 6;
 
   if (nextY > 640) {
@@ -222,7 +275,7 @@ export function generatePermitPdf(
   doc.setFontSize(10.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(30, 41, 59);
-  doc.text('6. VERIFIED PUBLISHED DATA SOURCES (PROVENANCE AUDIT)', 40, nextY);
+  doc.text(`${sectionIndex}. VERIFIED PUBLISHED DATA SOURCES (PROVENANCE AUDIT)`, 40, nextY);
   doc.line(40, nextY + 5, pageWidth - 40, nextY + 5);
 
   const sourceRows = [

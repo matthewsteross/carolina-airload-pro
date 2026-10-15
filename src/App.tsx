@@ -14,7 +14,10 @@ import {
   Layers,
   Info,
   BookOpen,
-  PieChart
+  PieChart,
+  ArrowRight,
+  BedDouble,
+  CheckCircle2
 } from 'lucide-react';
 import { NC_COUNTIES, SC_COUNTIES, CountyClimate, getCountyClimate } from './data/climateData';
 import { 
@@ -48,6 +51,10 @@ const JURISDICTION_DEFAULTS: Record<string, string> = {
 };
 
 export default function App() {
+  // Navigation Tab State
+  const [activeTab, setActiveTab] = useState<'sizing' | 'duct_schedule'>('sizing');
+  const [selectedDuctFloorId, setSelectedDuctFloorId] = useState<string>('floor-1');
+
   // 1. Location & Climate State
   const [state, setState] = useState<'NC' | 'SC'>('NC');
   const [selectedCounty, setSelectedCounty] = useState<string>('Mecklenburg');
@@ -90,15 +97,15 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showSourcesModal, setShowSourcesModal] = useState(false);
 
-  // 3. Floors State
+  // 3. Floors State - Starts with 1 single floor and no bedrooms until added
   const [floors, setFloors] = useState<FloorInput[]>([
     {
       id: 'floor-1',
       name: 'Main Level',
-      sqFt: 1600,
+      sqFt: 1800,
       ceilingHeight: 9,
       foundation: 'crawlspace_vented',
-      ceiling: 'conditioned_space_above',
+      ceiling: 'attic_vented_r38',
       wallVintage: '2000_2015_r13',
       windowType: 'double_low_e',
       windowCoveragePct: 12,
@@ -106,45 +113,12 @@ export default function App() {
       infiltration: 'semi_tight',
       ductLocation: 'crawlspace',
       systemType: 'heat_pump',
-      rooms: [
-        { id: 'r1', name: 'Living Room', sqFt: 350, exteriorWalls: 2 },
-        { id: 'r2', name: 'Kitchen / Dining', sqFt: 300, exteriorWalls: 1 },
-        { id: 'r3', name: 'Master Bedroom', sqFt: 280, exteriorWalls: 2 },
-        { id: 'r4', name: 'Master Bath / Closet', sqFt: 180, exteriorWalls: 1 },
-        { id: 'r5', name: 'Bedroom 2 / Office', sqFt: 200, exteriorWalls: 1 }
-      ]
-    },
-    {
-      id: 'floor-2',
-      name: 'Upper Level',
-      sqFt: 1200,
-      ceilingHeight: 8,
-      foundation: 'conditioned_space_below',
-      ceiling: 'attic_vented_r38',
-      wallVintage: '2000_2015_r13',
-      windowType: 'double_low_e',
-      windowCoveragePct: 12,
-      primaryExposure: 'balanced',
-      infiltration: 'semi_tight',
-      ductLocation: 'attic_unconditioned',
-      systemType: 'heat_pump',
-      rooms: [
-        { id: 'r2-1', name: 'Bedroom 3', sqFt: 220, exteriorWalls: 2 },
-        { id: 'r2-2', name: 'Bedroom 4', sqFt: 200, exteriorWalls: 1 },
-        { id: 'r2-3', name: 'Bonus / Media Room', sqFt: 400, exteriorWalls: 2 },
-        { id: 'r2-4', name: 'Bath & Hall', sqFt: 150, exteriorWalls: 1 }
-      ]
+      rooms: []
     }
   ]);
 
-  const [expandedRooms, setExpandedRooms] = useState<Record<string, boolean>>({
-    'floor-1': false,
-    'floor-2': false
-  });
-
   const [expandedComponents, setExpandedComponents] = useState<Record<string, boolean>>({
-    'floor-1': false,
-    'floor-2': false
+    'floor-1': false
   });
 
   // Save contractor details to localStorage
@@ -215,22 +189,50 @@ export default function App() {
       alert("A calculation must have at least one floor level.");
       return;
     }
-    setFloors(floors.filter(f => f.id !== id));
+    const remaining = floors.filter(f => f.id !== id);
+    setFloors(remaining);
+    if (selectedDuctFloorId === id && remaining.length > 0) {
+      setSelectedDuctFloorId(remaining[0].id);
+    }
   };
 
   const updateFloor = (id: string, updates: Partial<FloorInput>) => {
     setFloors(floors.map(f => f.id === id ? { ...f, ...updates } : f));
   };
 
-  const toggleRoomExpansion = (floorId: string) => {
-    setExpandedRooms(prev => ({ ...prev, [floorId]: !prev[floorId] }));
-  };
-
   const toggleComponentExpansion = (floorId: string) => {
     setExpandedComponents(prev => ({ ...prev, [floorId]: !prev[floorId] }));
   };
 
+  // Helper count of total rooms across all floors
+  const totalRoomsCount = useMemo(() => {
+    return floors.reduce((acc, f) => acc + (f.rooms?.length || 0), 0);
+  }, [floors]);
+
+  // Active floor and calculation results for Duct Schedule tab
+  const currentDuctFloor = useMemo(() => {
+    return floors.find(f => f.id === selectedDuctFloorId) || floors[0];
+  }, [floors, selectedDuctFloorId]);
+
+  const currentDuctResult = useMemo(() => {
+    return calculationResult.floors.find(f => f.floorId === currentDuctFloor.id);
+  }, [calculationResult, currentDuctFloor]);
+
   // Room management
+  const handleAddPresetRoom = (floorId: string, name: string, sqFt: number, exteriorWalls: 0 | 1 | 2 | 3) => {
+    setFloors(floors.map(f => {
+      if (f.id !== floorId) return f;
+      const rooms = f.rooms || [];
+      const newRoom: RoomData = {
+        id: `room-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        name,
+        sqFt,
+        exteriorWalls
+      };
+      return { ...f, rooms: [...rooms, newRoom] };
+    }));
+  };
+
   const handleAddRoom = (floorId: string) => {
     setFloors(floors.map(f => {
       if (f.id !== floorId) return f;
@@ -319,11 +321,50 @@ export default function App() {
         </div>
       </header>
 
+      {/* Navigation Tab Switcher */}
+      <nav className="bg-slate-900 border-b border-slate-800 sticky top-[69px] z-30 shadow-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex space-x-2 sm:space-x-4">
+            <button
+              type="button"
+              onClick={() => setActiveTab('sizing')}
+              className={`py-3 px-4 font-bold text-xs sm:text-sm border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
+                activeTab === 'sizing'
+                  ? 'border-blue-500 text-white bg-slate-800/80 shadow-inner'
+                  : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+              }`}
+            >
+              <Layers className="w-4 h-4 text-blue-400" />
+              <span>1. Equipment & Load Sizing</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('duct_schedule')}
+              className={`py-3 px-4 font-bold text-xs sm:text-sm border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
+                activeTab === 'duct_schedule'
+                  ? 'border-sky-500 text-white bg-slate-800/80 shadow-inner'
+                  : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+              }`}
+            >
+              <Wind className="w-4 h-4 text-sky-400" />
+              <span>2. Airflow & Duct Schedule</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                totalRoomsCount > 0 ? 'bg-sky-500 text-white' : 'bg-slate-700 text-slate-300'
+              }`}>
+                {totalRoomsCount} {totalRoomsCount === 1 ? 'room' : 'rooms'}
+              </span>
+            </button>
+          </div>
+        </div>
+      </nav>
+
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full space-y-6">
-        
-        {/* State, County & Climate Quick Selector Card */}
-        <section className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 transition-all">
+        {activeTab === 'sizing' ? (
+          <>
+            {/* State, County & Climate Quick Selector Card */}
+            <section className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 transition-all">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
             
             {/* State Selector Buttons */}
@@ -495,7 +536,6 @@ export default function App() {
         <div className="space-y-5">
           {floors.map((floor, index) => {
             const floorResult = calculationResult.floors.find(f => f.floorId === floor.id);
-            const isRoomsExpanded = expandedRooms[floor.id] || false;
             const isComponentsExpanded = expandedComponents[floor.id] || false;
 
             return (
@@ -762,134 +802,303 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Room-by-Room Breakdown Drawer */}
-                <div className="border-t border-slate-200 bg-slate-50/50">
-                  <div className="px-5 py-3 flex items-center justify-between">
-                    <button
-                      type="button"
-                      onClick={() => toggleRoomExpansion(floor.id)}
-                      className="inline-flex items-center space-x-2 text-xs font-bold text-blue-700 hover:text-blue-900 transition-colors"
-                    >
-                      {isRoomsExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                      <span>
-                        {isRoomsExpanded ? 'Hide Room-by-Room Airflow & Duct Schedule' : 'Room-by-Room Breakdown (CFM, Duct & Register Sizes)'}
-                      </span>
-                      <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-[10px]">
-                        {(floor.rooms || []).length} Rooms
-                      </span>
-                    </button>
-
-                    {isRoomsExpanded && (
-                      <button
-                        type="button"
-                        onClick={() => handleAddRoom(floor.id)}
-                        className="inline-flex items-center space-x-1 px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 shadow-2xs"
-                      >
-                        <Plus className="w-3 h-3 text-blue-600" />
-                        <span>Add Room</span>
-                      </button>
-                    )}
+                {/* Airflow & Duct Schedule Direct Callout Bar */}
+                <div className="border-t border-slate-200 bg-slate-50/70 px-5 py-3 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center space-x-2 text-xs font-semibold text-slate-700">
+                    <Wind className="w-4 h-4 text-sky-600" />
+                    <span>Airflow & Duct Schedule:</span>
+                    <span className="font-bold text-slate-900 bg-white border border-slate-200 px-2 py-0.5 rounded-md shadow-2xs">
+                      {(floor.rooms || []).length} {(floor.rooms || []).length === 1 ? 'room' : 'rooms'} configured
+                    </span>
+                    <span className="text-slate-400 text-[11px] hidden sm:inline">
+                      ({floorResult ? `${floorResult.totalCfm} CFM total floor blower capacity` : ''})
+                    </span>
                   </div>
 
-                  {/* Expanded Room List */}
-                  {isRoomsExpanded && (
-                    <div className="px-5 pb-5">
-                      {(floor.rooms || []).length === 0 ? (
-                        <div className="p-4 bg-white rounded-xl border border-dashed border-slate-300 text-center">
-                          <p className="text-xs text-slate-500 mb-2">No individual rooms added yet for this level.</p>
-                          <button
-                            type="button"
-                            onClick={() => handleAddRoom(floor.id)}
-                            className="inline-flex items-center space-x-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-xs hover:bg-blue-700"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>Add First Room</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
-                          <table className="w-full text-left text-xs">
-                            <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
-                              <tr>
-                                <th className="px-3 py-2.5">Room Name</th>
-                                <th className="px-3 py-2.5 w-24">Area (sq ft)</th>
-                                <th className="px-3 py-2.5 w-32">Exposure</th>
-                                <th className="px-3 py-2.5 text-center text-blue-700">Calculated Airflow</th>
-                                <th className="px-3 py-2.5 text-center text-emerald-700">Suggested Duct (Equal Friction)</th>
-                                <th className="px-3 py-2.5 text-center text-indigo-700">Recommended Register</th>
-                                <th className="px-2 py-2.5 w-10"></th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {(floorResult?.rooms || []).map((room) => (
-                                <tr key={room.id} className="hover:bg-slate-50/70 transition-colors">
-                                  <td className="px-3 py-2">
-                                    <input
-                                      type="text"
-                                      value={room.name}
-                                      onChange={(e) => updateRoom(floor.id, room.id, { name: e.target.value })}
-                                      className="w-full bg-transparent font-semibold text-slate-800 focus:ring-1 focus:ring-blue-500 rounded px-1"
-                                    />
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    <input
-                                      type="number"
-                                      min={20}
-                                      max={2000}
-                                      value={room.sqFt}
-                                      onChange={(e) => updateRoom(floor.id, room.id, { sqFt: parseInt(e.target.value) || 0 })}
-                                      className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1 font-medium text-slate-800"
-                                    />
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    <select
-                                      value={room.exteriorWalls}
-                                      onChange={(e) => updateRoom(floor.id, room.id, { exteriorWalls: parseInt(e.target.value) as any })}
-                                      className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-700"
-                                    >
-                                      <option value={0}>Interior Only</option>
-                                      <option value={1}>1 Exterior Wall</option>
-                                      <option value={2}>2 Exterior Walls (Corner)</option>
-                                      <option value={3}>3 Exterior Walls</option>
-                                    </select>
-                                  </td>
-                                  <td className="px-3 py-2 text-center font-bold text-blue-700">
-                                    {room.calculatedCfm || 0} CFM
-                                    <span className="block text-[10px] text-slate-400 font-normal">
-                                      {(room.calculatedBtu || 0).toLocaleString()} BTU
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-2 text-center font-bold text-emerald-700">
-                                    {room.suggestedDuctSize || '6" Round Flex'}
-                                  </td>
-                                  <td className="px-3 py-2 text-center font-bold text-indigo-700">
-                                    {room.suggestedVentSize || '4" x 10" Boot'}
-                                  </td>
-                                  <td className="px-2 py-2 text-right">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveRoom(floor.id, room.id)}
-                                      className="text-slate-400 hover:text-rose-500 p-1"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedDuctFloorId(floor.id);
+                      setActiveTab('duct_schedule');
+                    }}
+                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+                  >
+                    <span>Open Duct & Vent Schedule</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
 
               </div>
             );
           })}
         </div>
+      </>
+    ) : (
+      /* DEDICATED AIRFLOW & DUCT SCHEDULE TAB */
+      <div className="space-y-6">
+        {/* Duct Schedule Top Header Card */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-3 bg-sky-50 text-sky-600 rounded-xl border border-sky-100">
+              <Wind className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h2 className="text-lg font-black text-slate-900">Room-by-Room Airflow & Duct Schedule</h2>
+                <span className="bg-sky-100 text-sky-800 text-xs px-2.5 py-0.5 rounded-full font-bold">
+                  Equal Friction Method (0.08" w.g.)
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
+                Secondary sizing tool for room CFM distribution, suggested round flex branch duct sizes, and supply registers.
+              </p>
+            </div>
+          </div>
 
-      </main>
+          <button
+            type="button"
+            onClick={() => setActiveTab('sizing')}
+            className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+          >
+            <span>← Back to Equipment Sizing</span>
+          </button>
+        </div>
+
+        {/* Multi-story floor switcher tabs (if floors.length > 1) */}
+        {floors.length > 1 && (
+          <div className="flex flex-wrap gap-2">
+            {floors.map(f => {
+              const fResult = calculationResult.floors.find(r => r.floorId === f.id);
+              const isSelected = f.id === currentDuctFloor.id;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setSelectedDuctFloorId(f.id)}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all flex items-center space-x-2 cursor-pointer ${
+                    isSelected
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-500/30'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <span>{f.name}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isSelected ? 'bg-blue-700 text-blue-100' : 'bg-slate-100 text-slate-600'}`}>
+                    {fResult?.recommendedTonnage.toFixed(1)}T • {fResult?.totalCfm} CFM
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Active Level Card */}
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+          {/* Level Status Header */}
+          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-4 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="text-xs text-sky-400 font-bold uppercase tracking-wider">Level Duct Schedule</div>
+              <h3 className="text-base font-black text-white">{currentDuctFloor.name} ({currentDuctFloor.sqFt.toLocaleString()} sq ft)</h3>
+            </div>
+
+            <div className="flex items-center space-x-4 bg-slate-800/90 border border-slate-700 px-4 py-1.5 rounded-xl">
+              <div>
+                <div className="text-[10px] text-slate-400 font-bold uppercase">System Airflow</div>
+                <div className="text-lg font-black text-sky-400">{currentDuctResult?.totalCfm || 0} CFM</div>
+              </div>
+              <div className="border-l border-slate-700 pl-3">
+                <div className="text-[10px] text-slate-400 font-bold uppercase">Allocated CFM</div>
+                <div className="text-lg font-black text-emerald-400">
+                  {(currentDuctFloor.rooms || []).length > 0 ? `${currentDuctResult?.totalCfm || 0} CFM` : '0 CFM'}
+                </div>
+              </div>
+              <div className="border-l border-slate-700 pl-3">
+                <div className="text-[10px] text-slate-400 font-bold uppercase">Rooms Configured</div>
+                <div className="text-lg font-black text-white">{(currentDuctFloor.rooms || []).length}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Add Room Buttons Bar */}
+          <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center space-x-1.5 text-xs font-bold text-slate-700">
+              <span>Quick Add Room:</span>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => handleAddPresetRoom(currentDuctFloor.id, 'Master Bedroom', 280, 2)}
+                className="inline-flex items-center space-x-1 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 hover:border-slate-400 shadow-2xs transition-colors cursor-pointer"
+              >
+                <BedDouble className="w-3.5 h-3.5 text-blue-600" />
+                <span>+ Master Bed (280 sf)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAddPresetRoom(currentDuctFloor.id, `Bedroom ${(currentDuctFloor.rooms || []).length + 1}`, 180, 1)}
+                className="inline-flex items-center space-x-1 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 hover:border-slate-400 shadow-2xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5 text-blue-600" />
+                <span>+ Bedroom (180 sf)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAddPresetRoom(currentDuctFloor.id, 'Living Room', 350, 2)}
+                className="inline-flex items-center space-x-1 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 hover:border-slate-400 shadow-2xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5 text-blue-600" />
+                <span>+ Living Room (350 sf)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAddPresetRoom(currentDuctFloor.id, 'Kitchen / Dining', 250, 1)}
+                className="inline-flex items-center space-x-1 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 hover:border-slate-400 shadow-2xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5 text-blue-600" />
+                <span>+ Kitchen (250 sf)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAddRoom(currentDuctFloor.id)}
+                className="inline-flex items-center space-x-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ Custom Room</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Rooms Table Content */}
+          <div className="p-5">
+            {(currentDuctFloor.rooms || []).length === 0 ? (
+              <div className="p-8 bg-slate-50/70 rounded-2xl border-2 border-dashed border-slate-300 text-center max-w-lg mx-auto my-4">
+                <div className="w-12 h-12 mx-auto bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-3">
+                  <Wind className="w-6 h-6" />
+                </div>
+                <h4 className="text-sm font-bold text-slate-800 mb-1">No Rooms Added Yet</h4>
+                <p className="text-xs text-slate-500 mb-4">
+                  Click any quick button above to add bedrooms, living areas, or offices to calculate room-by-room CFM distribution, suggested round flex duct sizes, and supply registers.
+                </p>
+                <div className="flex justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleAddPresetRoom(currentDuctFloor.id, 'Master Bedroom', 280, 2)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 shadow-xs cursor-pointer"
+                  >
+                    + Add First Bedroom
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100/90 text-slate-700 font-bold border-b border-slate-200">
+                    <tr>
+                      <th className="px-3 py-3">Room Name</th>
+                      <th className="px-3 py-3 w-28">Area (sq ft)</th>
+                      <th className="px-3 py-3 w-36">Exterior Exposure</th>
+                      <th className="px-3 py-3 text-center text-blue-700">Calculated Airflow</th>
+                      <th className="px-3 py-3 text-center text-emerald-700">Suggested Duct (Equal Friction)</th>
+                      <th className="px-3 py-3 text-center text-indigo-700">Recommended Register</th>
+                      <th className="px-2 py-3 w-12 text-center"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(currentDuctResult?.rooms || []).map((room) => (
+                      <tr key={room.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="px-3 py-2.5">
+                          <input
+                            type="text"
+                            value={room.name}
+                            onChange={(e) => updateRoom(currentDuctFloor.id, room.id, { name: e.target.value })}
+                            className="w-full bg-transparent font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 rounded px-2 py-1 border border-transparent hover:border-slate-300"
+                          />
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center space-x-1">
+                            <input
+                              type="number"
+                              min={20}
+                              max={3000}
+                              value={room.sqFt}
+                              onChange={(e) => updateRoom(currentDuctFloor.id, room.id, { sqFt: parseInt(e.target.value) || 0 })}
+                              className="w-20 bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
+                            />
+                            <span className="text-[11px] text-slate-400">sf</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <select
+                            value={room.exteriorWalls}
+                            onChange={(e) => updateRoom(currentDuctFloor.id, room.id, { exteriorWalls: parseInt(e.target.value) as any })}
+                            className="bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 text-xs font-medium text-slate-700 focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value={0}>Interior Only</option>
+                            <option value={1}>1 Exterior Wall</option>
+                            <option value={2}>2 Exterior Walls (Corner)</option>
+                            <option value={3}>3 Exterior Walls</option>
+                          </select>
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className="font-black text-sm text-blue-700">{room.calculatedCfm || 0} CFM</span>
+                          <span className="block text-[10px] text-slate-400">
+                            {(room.calculatedBtu || 0).toLocaleString()} BTU/h
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className="inline-block px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg font-bold text-xs">
+                            {room.suggestedDuctSize || '6" Round Flex'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className="inline-block px-2.5 py-1 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-lg font-bold text-xs">
+                            {room.suggestedVentSize || '4" x 10" Register'}
+                          </span>
+                        </td>
+                        <td className="px-2 py-2.5 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveRoom(currentDuctFloor.id, room.id)}
+                            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            title="Delete room"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-slate-50/90 font-bold border-t-2 border-slate-200 text-slate-800">
+                    <tr>
+                      <td className="px-3 py-3">
+                        Total Room Airflow ({currentDuctResult?.rooms.length} rooms)
+                      </td>
+                      <td className="px-3 py-3">
+                        {currentDuctFloor.rooms?.reduce((acc, r) => acc + r.sqFt, 0).toLocaleString()} sf
+                      </td>
+                      <td className="px-3 py-3 text-slate-400 text-[11px] font-normal">
+                        Floor total: {currentDuctFloor.sqFt.toLocaleString()} sf
+                      </td>
+                      <td className="px-3 py-3 text-center text-blue-700 text-sm font-black">
+                        {currentDuctResult?.totalCfm} CFM
+                        <span className="block text-[10px] text-emerald-600 font-semibold flex items-center justify-center gap-0.5">
+                          <CheckCircle2 className="w-3 h-3 inline" /> 100% Balanced
+                        </span>
+                      </td>
+                      <td colSpan={3} className="px-3 py-3 text-right text-[11px] text-slate-500 font-medium">
+                        Equal Friction (0.08" w.g.) • 450-550 FPM Grille Velocity
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+    )}
+  </main>
 
       {/* Floating Bottom Action & Summary Bar */}
       <footer className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200/80 shadow-2xl py-3 px-4 sm:px-6 lg:px-8 z-30">
