@@ -1,8 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   Wind, 
-  Thermometer, 
-  ShieldCheck, 
+  Thermometer,
   FileText, 
   Plus, 
   Trash2, 
@@ -1171,13 +1170,6 @@ export default function App() {
               </div>
             </div>
 
-            <div className="hidden md:block border-l border-slate-200 pl-4">
-              <div className="text-[10px] text-slate-400 uppercase font-semibold">Code Authority</div>
-              <div className="flex items-center space-x-1 text-xs font-bold text-emerald-600">
-                <ShieldCheck className="w-4 h-4" />
-                <span>{state} M1401.3 load calculation</span>
-              </div>
-            </div>
           </div>
 
           <div className="flex items-center space-x-3">
